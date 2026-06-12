@@ -114,6 +114,7 @@ class TaobaoSearchSkill:
         # 设置环境变量
         env = os.environ.copy()
         env['PATH'] = self.adb_path + os.pathsep + env.get('PATH', '')
+        env['PYTHONIOENCODING'] = 'utf-8'
 
         with _DEVICE_LOCK:
             notify("controlling_phone")
@@ -166,7 +167,7 @@ class TaobaoSearchSkill:
 
         path = SCREENSHOT_DIR / f"{datetime.now():%Y%m%d_%H%M%S}_{uuid.uuid4().hex[:8]}.png"
         path.write_bytes(result.stdout)
-        print(f"📸 已截屏: {path.name} ({len(result.stdout) // 1024} KB)")
+        print(f"Screenshot captured: {path.name} ({len(result.stdout) // 1024} KB)")
         return path
 
     def _extract_products_from_screenshot(
@@ -177,7 +178,7 @@ class TaobaoSearchSkill:
 
         提取失败时降级返回模拟数据，但所有降级数据带 is_demo=True 标记。
         """
-        print(f"📸 分析截图: {screenshot_path.name}")
+        print(f"Analyzing screenshot: {screenshot_path.name}")
 
         try:
             # 读取截图并编码为 base64
@@ -259,11 +260,11 @@ class TaobaoSearchSkill:
             if not products:
                 raise ValueError("截图中未识别出有效商品")
 
-            print(f"✅ 提取了 {len(products)} 个商品")
+            print(f"Extracted {len(products)} products")
             return products
 
         except Exception as e:
-            print(f"⚠️  商品信息提取失败: {e}")
+            print(f"Product extraction failed: {e}")
             print("   使用模拟数据作为降级方案")
             return self._get_mock_products(keyword, max_count)
 
@@ -293,4 +294,4 @@ if __name__ == "__main__":
 
     print(f"搜索到 {len(products)} 个商品:")
     for p in products:
-        print(f"- {p.title} | ¥{p.price} | ⭐{p.rating}")
+        print(f"- {p.title} | ¥{p.price} | rating={p.rating}")

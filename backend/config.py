@@ -24,7 +24,10 @@ if not ZHIPU_API_KEY:
 if not ZHIPU_BASE_URL:
     raise ValueError("ZHIPU_BASE_URL 未设置")
 
-# ADB 路径
-ADB_PATH = r"C:\Users\AllureLove\AppData\Local\Microsoft\WinGet\Packages\Google.PlatformTools_Microsoft.Winget.Source_8wekyb3d8bbwe\platform-tools"
+# ADB platform-tools 目录；未配置时保留当前开发机默认路径作为本地 fallback
+ADB_PATH = os.getenv(
+    'ADB_PATH',
+    r"C:\Users\AllureLove\AppData\Local\Microsoft\WinGet\Packages\Google.PlatformTools_Microsoft.Winget.Source_8wekyb3d8bbwe\platform-tools",
+)
 
-print(f"✅ 配置加载成功 (Model: {ZHIPU_MODEL})")
+print(f"Config loaded successfully (Model: {ZHIPU_MODEL})")

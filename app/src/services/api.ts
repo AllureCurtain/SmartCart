@@ -39,6 +39,7 @@ export interface Product {
 
 export interface SearchResult {
   task_id: string;
+  query?: string;
   status: string;
   progress?: string;
   products?: Product[];
@@ -71,6 +72,17 @@ class ApiService {
    */
   async getSearchResult(taskId: string): Promise<SearchResult> {
     const response = await axios.get(`${API_BASE_URL}/api/search/${taskId}`);
+    return response.data.data;
+  }
+
+  /**
+   * 获取最近一次已完成搜索结果
+   */
+  async getLatestSearchResult(userId: string = 'default'): Promise<SearchResult | null> {
+    const response = await axios.get(`${API_BASE_URL}/api/search/latest/${userId}`);
+    if (!response.data.success) {
+      return null;
+    }
     return response.data.data;
   }
 

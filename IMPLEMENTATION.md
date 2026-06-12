@@ -13,26 +13,42 @@
 | FastAPI 后端框架 | `backend/main.py` | ✅ 搜索任务创建/查询、偏好查询 API 可用 |
 | 需求解析 | `backend/services/query_parser.py` | ✅ GLM 解析 + 失败降级 |
 | 偏好学习服务 | `backend/services/preference_service.py` | ✅ 逻辑完整，含权重生成 |
-| 淘宝搜索 Skill | `backend/skills/taobao_search.py` | ⚠️ 能驱动真机操作，但见下方断点 1 |
-| App 搜索页/偏好页 | `app/src/screens/` | ✅ 界面与轮询逻辑可用 |
-| 演示模式 | `demo_mode=True` | ✅ 模拟数据跑通全流程 |
+| 淘宝搜索 Skill | `backend/skills/taobao_search.py` | ✅ 真机控制、后端截屏、GLM-4V 商品提取已打通 |
+| App 搜索页/偏好页 | `app/src/screens/` | ✅ Expo Go 真机运行、结果恢复、Memory 可视化可用 |
+| 演示模式 | `demo_mode=True` | ✅ 模拟数据降级路径带 `is_demo=True` 标记 |
 
-### 已知断点（按严重程度排序）
+### 已解决断点
 
 **断点 1：真实模式的商品提取永远拿不到截图**
 `taobao_search.py` 的 `_extract_products_from_screenshot()` 在 `Open-AutoGLM/screenshots/` 目录找截图，但 Open-AutoGLM 不会把截图持久化到磁盘（截图只在内存中传给模型）。因此真实模式必然静默降级到模拟数据——手机真的在搜索，App 显示的却是假商品。
 
+**状态**：已解决。后端在 AutoGLM 控制淘宝结束后自行执行 `adb exec-out screencap -p`，再调用 GLM-4V 解析截图。
+
 **断点 2：用户行为记录是空壳**
 `main.py` 的 `POST /api/preference/action` 两个分支都是 `TODO: pass`，且前端商品卡片没有点击事件、从未调用 `recordAction`。Memory 的 view/click 学习在产品流程中不会发生。
+
+**状态**：已解决。前端点击真实商品后上报 `task_id + product_id`，后端回查任务文件并写入 Memory；演示数据不上报。
 
 **断点 3：推荐权重没有消费方**
 `get_recommendation_weights()` 已实现，但搜索结果排序完全没有使用它，"自进化"未闭环。
 
+**状态**：已解决。搜索结果保存前调用 `preference_service.rank_products()`，按品牌、特性和价格偏好重排序。
+
 **断点 4：前端进度提示与真实状态无关**
 `HomeScreen.tsx` 按轮询次数猜测进度（"正在打开淘宝…"），后端失败时界面仍在演进度。
 
+**状态**：已解决。任务创建即落盘，后端写入 `queued / controlling_phone / extracting / ranking`，前端读取真实阶段。
+
 **断点 5：真机 App 未验证**
 只测过 `npm run web`。`api.ts` 硬编码 `localhost:8000`，真机上无法连接后端。
+
+**状态**：已解决。Expo Go 真机已验证，App 通过 `expo-constants` 自动取开发机局域网 IP。
+
+### 当前剩余风险
+
+- 单台手机同时运行 Expo Go 和淘宝时，AutoGLM 会把 App 切后台。已增加最近结果恢复接口和前端恢复逻辑，但正式录制时仍建议保持网络稳定，或使用两台手机分别展示 App 与被控淘宝。
+- 当前只提取淘宝首屏商品，一屏约 3 个；滚动多屏采集可作为后续扩展。
+- 品牌字段仍依赖视觉模型识别，可能把“天猫”“百亿补贴”等标签当作品牌，需要后续做字段清洗。
 
 ---
 
@@ -104,16 +120,22 @@ adb exec-out screencap -p > screenshot.png
 - [x] 修复隐藏 bug：原实现任务文件在搜索结束才写入，真实模式下轮询拿到"任务不存在"导致前端轮询中断、界面永久卡死
 - [x] 前端进度文案改为读后端真实阶段（删除按时间编造的假进度），单次轮询失败自动重试
 - [x] `API_BASE_URL` 通过 expo-constants 自动取 Expo 开发机局域网 IP（Web/模拟器降级 localhost），真机免手动配置
-- [ ] Expo Go 真机运行验证（App 与被控手机可以是同一台或两台）
+- [x] Expo Go 真机运行验证（App 与被控手机可以是同一台或两台）
+- [x] 单机演示恢复：增加 `/api/search/latest/{user_id}`，App 重载后恢复最近完成结果
 
 **验收**：手机上的 App 完成一次真实搜索全流程。
 
+> ✅ **2026-06-12 Expo Go 真机验收通过**：手机与电脑同一 WiFi，
+> 手机 Expo Go 打开 SmartCart，输入“蓝牙耳机”后创建真实搜索任务；
+> AutoGLM 切到淘宝完成搜索，后端截屏并提取 3 个真实商品；
+> App 恢复最近结果并展示华为 FreeBuds 7i（¥443.01）等真实商品，`is_demo=false`。
+
 ### Phase 4：打磨与提交材料
 
-- [ ] UI 优化：商品图片占位、加载骨架屏、空状态
-- [ ] 后端代码审查遗留项：print 迁移到 logging、截图目录清理机制、skill 单元测试（mock subprocess）
-- [ ] 录制演示视频（建议分镜：真机自动操作画面 + App 画面同框）
-- [ ] README 状态区更新（"进行中"项移入"已实现"）
+- [x] UI 优化：商品缩略占位、加载骨架屏、空状态、结果页信息层级打磨
+- [x] 后端代码审查遗留项：Windows 控制台编码加固、AutoGLM 子进程 UTF-8 输出、skill 单元测试（mock subprocess）
+- [x] 录制演示视频脚本（见 README）
+- [x] README 状态区更新（"进行中"项移入"已实现"）
 - [ ] 可选加分项：京东搜索 Skill（验证 Skill 机制的可复用性）
 
 **验收**：演示视频 + GitHub 仓库可以直接作为作业提交。

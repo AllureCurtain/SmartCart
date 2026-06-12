@@ -189,6 +189,32 @@ async def get_search_result(task_id: str):
         return APIResponse(success=False, error=str(e))
 
 
+@app.get("/api/search/latest/{user_id}", response_model=APIResponse)
+async def get_latest_search_result(user_id: str):
+    """
+    获取最近一次已完成搜索结果。
+
+    Expo Go 真机验证时，同一台手机会被 AutoGLM 切到淘宝前台；App 回到前台
+    后可能已重载，运行时 state 丢失。这个端点让前端恢复最近结果。
+    当前任务文件未保存 user_id，先按单用户 demo 返回全局最新 completed 任务。
+    """
+    try:
+        task_files = sorted(
+            TASKS_DIR.glob("*.json"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        for result_file in task_files:
+            with open(result_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            if data.get("status") == "completed":
+                return APIResponse(success=True, data=data)
+
+        return APIResponse(success=False, error="暂无已完成搜索结果")
+    except Exception as e:
+        return APIResponse(success=False, error=str(e))
+
+
 # ==================== 偏好相关 ====================
 
 @app.get("/api/preference/{user_id}", response_model=APIResponse)

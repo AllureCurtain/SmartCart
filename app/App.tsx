@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { StyleSheet, TouchableOpacity, Text, View, SafeAreaView } from 'react-native';
+import { StyleSheet, TouchableOpacity, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import HomeScreen from './src/screens/HomeScreen';
 import PreferenceScreen from './src/screens/PreferenceScreen';
 
