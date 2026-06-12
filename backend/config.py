@@ -16,6 +16,8 @@ else:
 ZHIPU_API_KEY = os.getenv('ZHIPU_API_KEY')
 ZHIPU_BASE_URL = os.getenv('ZHIPU_BASE_URL')
 ZHIPU_MODEL = os.getenv('ZHIPU_MODEL', 'autoglm-phone')
+# 截图商品提取用的多模态模型（glm-4v-flash 免费）
+ZHIPU_VISION_MODEL = os.getenv('ZHIPU_VISION_MODEL', 'glm-4v-flash')
 
 if not ZHIPU_API_KEY:
     raise ValueError("ZHIPU_API_KEY 未设置")

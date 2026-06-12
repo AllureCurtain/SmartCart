@@ -17,7 +17,7 @@ from openai import OpenAI
 # 添加路径
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from models import Product
-from config import ZHIPU_API_KEY, ZHIPU_BASE_URL, ZHIPU_MODEL, ADB_PATH
+from config import ZHIPU_API_KEY, ZHIPU_BASE_URL, ZHIPU_MODEL, ZHIPU_VISION_MODEL, ADB_PATH
 
 # 添加 Open-AutoGLM 到路径
 AUTOGLM_PATH = Path(__file__).parent.parent.parent.parent / "Open-AutoGLM"
@@ -43,6 +43,30 @@ def _sanitize_keyword(keyword: str) -> str:
     if not cleaned:
         raise ValueError("搜索关键词为空")
     return cleaned[:MAX_KEYWORD_LENGTH]
+
+
+def _parse_float(value) -> float:
+    """容错解析数值：模型可能返回 '¥343.82'、'343.82元' 等带符号字符串"""
+    if value is None:
+        return 0.0
+    if isinstance(value, (int, float)):
+        return float(value)
+    cleaned = re.sub(r'[^\d.]', '', str(value))
+    return float(cleaned) if cleaned else 0.0
+
+
+def _parse_int(value):
+    """容错解析整数：兼容 '1.5万+'、'6000+' 等电商常见计数格式"""
+    if value is None:
+        return None
+    if isinstance(value, int):
+        return value
+    s = str(value)
+    wan = re.search(r'([\d.]+)\s*万', s)
+    if wan:
+        return int(float(wan.group(1)) * 10000)
+    cleaned = re.sub(r'[^\d]', '', s)
+    return int(cleaned) if cleaned else None
 
 
 class TaobaoSearchSkill:
@@ -160,7 +184,7 @@ class TaobaoSearchSkill:
             client = OpenAI(api_key=self.api_key, base_url=self.base_url)
 
             response = client.chat.completions.create(
-                model="glm-4v",  # 多模态模型
+                model=ZHIPU_VISION_MODEL,  # 多模态模型（默认 glm-4v-flash，免费）
                 messages=[
                     {
                         "role": "user",
@@ -192,7 +216,7 @@ class TaobaoSearchSkill:
                     }
                 ],
                 temperature=0.1,
-                max_tokens=2000
+                max_tokens=1024  # glm-4v-flash 上限 1024
             )
 
             # 解析返回的 JSON
@@ -212,17 +236,24 @@ class TaobaoSearchSkill:
             # 转换为 Product 对象
             products = []
             for i, p in enumerate(products_data[:max_count], 1):
+                price = _parse_float(p.get('price'))
+                if price <= 0:
+                    continue  # 无有效价格的条目跳过（多为广告位/识别噪声）
+                rating = _parse_float(p.get('rating'))
                 products.append(Product(
                     id=f"tb_{i}_{hash(p.get('title', ''))}",
                     title=p.get('title', f'商品 {i}'),
-                    price=float(p.get('price', 0)),
+                    price=price,
                     original_price=None,
-                    rating=float(p.get('rating')) if p.get('rating') else None,
-                    review_count=int(p.get('review_count')) if p.get('review_count') else None,
-                    sales=int(p.get('sales')) if p.get('sales') else None,
+                    rating=rating if 0 < rating <= 5 else None,
+                    review_count=_parse_int(p.get('review_count')),
+                    sales=_parse_int(p.get('sales')),
                     brand=p.get('brand'),
                     platform="taobao"
                 ))
+
+            if not products:
+                raise ValueError("截图中未识别出有效商品")
 
             print(f"✅ 提取了 {len(products)} 个商品")
             return products
