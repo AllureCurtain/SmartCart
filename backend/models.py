@@ -47,6 +47,7 @@ class SearchResult(BaseModel):
     products: List[Product]  # 商品列表
     total_count: int  # 总数
     status: str = "completed"  # completed | failed | processing
+    progress: Optional[str] = None  # queued | controlling_phone | extracting | ranking
     error: Optional[str] = None  # 错误信息
     is_demo: bool = False  # 结果中包含演示数据
     created_at: datetime  # 创建时间

@@ -2,9 +2,24 @@
  * API 服务 - 与后端通信
  */
 import axios from 'axios';
+import Constants from 'expo-constants';
 
-// 配置后端地址（开发时需要修改为你的电脑 IP）
-const API_BASE_URL = 'http://localhost:8000';
+/**
+ * 后端地址解析：
+ * - Expo Go 真机调试时，hostUri 形如 "192.168.x.x:8081"，
+ *   自动取开发机的局域网 IP（后端需以 --host 0.0.0.0 启动）
+ * - Web / 模拟器降级为 localhost
+ */
+function resolveBaseUrl(): string {
+  const hostUri = Constants.expoConfig?.hostUri;
+  const host = hostUri?.split(':')[0];
+  if (host && host !== 'localhost' && host !== '127.0.0.1') {
+    return `http://${host}:8000`;
+  }
+  return 'http://localhost:8000';
+}
+
+const API_BASE_URL = resolveBaseUrl();
 
 export interface SearchRequest {
   query: string;
@@ -25,6 +40,7 @@ export interface Product {
 export interface SearchResult {
   task_id: string;
   status: string;
+  progress?: string;
   products?: Product[];
   error?: string;
   is_demo?: boolean;

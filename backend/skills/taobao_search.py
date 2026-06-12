@@ -86,17 +86,19 @@ class TaobaoSearchSkill:
         self.model = ZHIPU_MODEL
         self.demo_mode = demo_mode
 
-    def search(self, keyword: str, max_products: int = 10) -> List[Product]:
+    def search(self, keyword: str, max_products: int = 10, on_progress=None) -> List[Product]:
         """
         在淘宝搜索商品
 
         Args:
             keyword: 搜索关键词
             max_products: 最多返回商品数
+            on_progress: 阶段回调，依次收到 "controlling_phone" / "extracting"
 
         Returns:
             商品列表
         """
+        notify = on_progress or (lambda stage: None)
         # 演示模式：直接返回模拟数据（带 is_demo 标记）
         if self.demo_mode:
             print(f"[演示模式] 模拟搜索: {keyword}")
@@ -114,6 +116,7 @@ class TaobaoSearchSkill:
         env['PATH'] = self.adb_path + os.pathsep + env.get('PATH', '')
 
         with _DEVICE_LOCK:
+            notify("controlling_phone")
             try:
                 # 执行 Open-AutoGLM
                 result = subprocess.run([
@@ -134,6 +137,7 @@ class TaobaoSearchSkill:
             # （Open-AutoGLM 不持久化截图，必须自行截取）
             screenshot_path = self._capture_screenshot()
 
+        notify("extracting")
         return self._extract_products_from_screenshot(
             screenshot_path, keyword, max_products
         )

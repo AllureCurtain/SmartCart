@@ -11,6 +11,14 @@ import {
 } from 'react-native';
 import ApiService, { Product } from '../services/api';
 
+// 后端任务阶段 → 用户可读文案
+const PROGRESS_TEXT: Record<string, string> = {
+  queued: '任务排队中...',
+  controlling_phone: '正在控制手机搜索淘宝...',
+  extracting: '正在提取商品信息...',
+  ranking: '正在按你的偏好排序...',
+};
+
 export default function HomeScreen() {
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
@@ -71,20 +79,19 @@ export default function HomeScreen() {
         attempts++;
         const elapsed = Math.floor(attempts * 2);
 
-        // 根据时间显示不同的状态
-        if (attempts < 10) {
-          setSearchStatus(`正在连接手机... (${elapsed}秒)`);
-        } else if (attempts < 30) {
-          setSearchStatus(`正在打开淘宝... (${elapsed}秒)`);
-        } else if (attempts < 60) {
-          setSearchStatus(`正在搜索商品... (${elapsed}秒)`);
-        } else if (attempts < 100) {
-          setSearchStatus(`正在提取商品信息... (${elapsed}秒)`);
-        } else {
-          setSearchStatus(`即将完成... (${elapsed}秒)`);
+        let result;
+        try {
+          result = await ApiService.getSearchResult(task_id);
+        } catch {
+          // 单次轮询失败（网络抖动等）不中断，继续重试
+          setTimeout(pollResult, 2000);
+          return;
         }
 
-        const result = await ApiService.getSearchResult(task_id);
+        if (!result) {
+          setTimeout(pollResult, 2000);
+          return;
+        }
 
         if (result.status === 'completed') {
           setProducts(result.products || []);
@@ -95,6 +102,10 @@ export default function HomeScreen() {
           setSearchStatus(`❌ 搜索失败: ${result.error}`);
           setLoading(false);
         } else {
+          // 显示后端汇报的真实阶段
+          const stageText =
+            PROGRESS_TEXT[result.progress ?? ''] ?? '正在搜索...';
+          setSearchStatus(`${stageText} (${elapsed}秒)`);
           setTimeout(pollResult, 2000);
         }
       };

@@ -100,9 +100,10 @@ adb exec-out screencap -p > screenshot.png
 
 ### Phase 3：真实进度与真机运行
 
-- [ ] 后端任务增加 `progress` 阶段字段并逐阶段更新
-- [ ] 前端进度文案改为读后端状态
-- [ ] `API_BASE_URL` 可配置
+- [x] 后端任务增加 `progress` 阶段字段（queued / controlling_phone / extracting / ranking），任务创建即落盘并逐阶段更新
+- [x] 修复隐藏 bug：原实现任务文件在搜索结束才写入，真实模式下轮询拿到"任务不存在"导致前端轮询中断、界面永久卡死
+- [x] 前端进度文案改为读后端真实阶段（删除按时间编造的假进度），单次轮询失败自动重试
+- [x] `API_BASE_URL` 通过 expo-constants 自动取 Expo 开发机局域网 IP（Web/模拟器降级 localhost），真机免手动配置
 - [ ] Expo Go 真机运行验证（App 与被控手机可以是同一台或两台）
 
 **验收**：手机上的 App 完成一次真实搜索全流程。

@@ -52,18 +52,44 @@ def is_valid_task_id(task_id: str) -> bool:
 
 # ==================== 搜索相关 ====================
 
+def write_task(result: SearchResult):
+    """保存任务状态到文件"""
+    result_file = TASKS_DIR / f"{result.task_id}.json"
+    data = result.model_dump()
+    data['created_at'] = data['created_at'].isoformat()
+    with open(result_file, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def update_task_progress(task_id: str, progress: str):
+    """更新任务进度阶段（供前端轮询展示真实状态）"""
+    result_file = TASKS_DIR / f"{task_id}.json"
+    if not result_file.exists():
+        return
+    data = json.loads(result_file.read_text(encoding='utf-8'))
+    data['progress'] = progress
+    result_file.write_text(
+        json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8'
+    )
+
+
 def execute_search_task(task_id: str, request: SearchRequest, parsed_query: ParsedQuery):
     """后台执行搜索任务"""
     try:
-        # 1. 执行淘宝搜索
+        # 1. 执行淘宝搜索（skill 内部通过回调汇报阶段）
         keyword = parsed_query.category
-        products = taobao_skill.search(keyword, max_products=10)
+        update_task_progress(task_id, "controlling_phone")
+        products = taobao_skill.search(
+            keyword, max_products=10,
+            on_progress=lambda stage: update_task_progress(task_id, stage)
+        )
 
         # 2. 按用户偏好重排序（Memory → 自进化闭环）
+        update_task_progress(task_id, "ranking")
         products = preference_service.rank_products(request.user_id, products)
 
-        # 3. 创建结果
-        result = SearchResult(
+        # 3. 保存最终结果
+        write_task(SearchResult(
             task_id=task_id,
             query=request.query,
             parsed_query=parsed_query,
@@ -72,21 +98,14 @@ def execute_search_task(task_id: str, request: SearchRequest, parsed_query: Pars
             status="completed",
             is_demo=any(p.is_demo for p in products),
             created_at=datetime.now()
-        )
+        ))
 
-        # 4. 保存结果
-        result_file = TASKS_DIR / f"{task_id}.json"
-        with open(result_file, 'w', encoding='utf-8') as f:
-            data = result.dict()
-            data['created_at'] = data['created_at'].isoformat()
-            json.dump(data, f, ensure_ascii=False, indent=2)
-
-        # 5. 记录到偏好系统
+        # 4. 记录到偏好系统
         preference_service.record_search(request.user_id, request.query, parsed_query)
 
     except Exception as e:
         # 保存错误结果
-        result = SearchResult(
+        write_task(SearchResult(
             task_id=task_id,
             query=request.query,
             parsed_query=parsed_query,
@@ -95,12 +114,7 @@ def execute_search_task(task_id: str, request: SearchRequest, parsed_query: Pars
             status="failed",
             error=str(e),
             created_at=datetime.now()
-        )
-        result_file = TASKS_DIR / f"{task_id}.json"
-        with open(result_file, 'w', encoding='utf-8') as f:
-            data = result.dict()
-            data['created_at'] = data['created_at'].isoformat()
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        ))
 
 
 @app.post("/api/search", response_model=APIResponse)
@@ -118,8 +132,18 @@ async def search_products(request: SearchRequest, background_tasks: BackgroundTa
         # 1. 解析查询
         parsed_query = query_parser.parse(request.query)
 
-        # 2. 创建任务
+        # 2. 创建任务，立即落盘（轮询端点从创建起就能查到状态）
         task_id = str(uuid.uuid4())
+        write_task(SearchResult(
+            task_id=task_id,
+            query=request.query,
+            parsed_query=parsed_query,
+            products=[],
+            total_count=0,
+            status="processing",
+            progress="queued",
+            created_at=datetime.now()
+        ))
 
         # 3. 后台执行搜索
         background_tasks.add_task(execute_search_task, task_id, request, parsed_query)
@@ -129,7 +153,7 @@ async def search_products(request: SearchRequest, background_tasks: BackgroundTa
             data={
                 "task_id": task_id,
                 "status": "processing",
-                "parsed_query": parsed_query.dict()
+                "parsed_query": parsed_query.model_dump()
             },
             message="搜索任务已创建"
         )
