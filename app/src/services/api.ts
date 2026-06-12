@@ -19,6 +19,7 @@ export interface Product {
   review_count?: number;
   brand?: string;
   platform: string;
+  is_demo?: boolean;
 }
 
 export interface SearchResult {
@@ -26,6 +27,7 @@ export interface SearchResult {
   status: string;
   products?: Product[];
   error?: string;
+  is_demo?: boolean;
 }
 
 export interface UserPreference {

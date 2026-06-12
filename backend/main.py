@@ -59,6 +59,7 @@ def execute_search_task(task_id: str, request: SearchRequest, parsed_query: Pars
             products=products,
             total_count=len(products),
             status="completed",
+            is_demo=any(p.is_demo for p in products),
             created_at=datetime.now()
         )
 

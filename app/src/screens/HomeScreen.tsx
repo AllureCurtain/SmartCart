@@ -16,6 +16,7 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
   const [searchStatus, setSearchStatus] = useState('');
+  const [isDemo, setIsDemo] = useState(false);
 
   const handleSearch = async () => {
     if (!query.trim()) {
@@ -25,6 +26,7 @@ export default function HomeScreen() {
 
     setLoading(true);
     setProducts([]);
+    setIsDemo(false);
     setSearchStatus('正在创建搜索任务...');
 
     try {
@@ -63,6 +65,7 @@ export default function HomeScreen() {
 
         if (result.status === 'completed') {
           setProducts(result.products || []);
+          setIsDemo(!!result.is_demo);
           setSearchStatus(`✅ 搜索完成！找到 ${result.products?.length || 0} 个商品`);
           setLoading(false);
         } else if (result.status === 'failed') {
@@ -116,8 +119,20 @@ export default function HomeScreen() {
       {products.length > 0 && (
         <View style={styles.resultsContainer}>
           <Text style={styles.resultsTitle}>搜索结果</Text>
+          {isDemo && (
+            <View style={styles.demoBanner}>
+              <Text style={styles.demoBannerText}>
+                ⚠️ 当前为演示数据，非真实商品（真机搜索失败或处于演示模式）
+              </Text>
+            </View>
+          )}
           {products.map((product) => (
             <View key={product.id} style={styles.productCard}>
+              {product.is_demo && (
+                <View style={styles.demoBadge}>
+                  <Text style={styles.demoBadgeText}>演示数据</Text>
+                </View>
+              )}
               <Text style={styles.productTitle} numberOfLines={2}>
                 {product.title}
               </Text>
@@ -216,6 +231,31 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
     marginBottom: 16,
+  },
+  demoBanner: {
+    backgroundColor: '#FFF3E0',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#FFB74D',
+    padding: 12,
+    marginBottom: 12,
+  },
+  demoBannerText: {
+    fontSize: 13,
+    color: '#E65100',
+  },
+  demoBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#FFB74D',
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    marginBottom: 6,
+  },
+  demoBadgeText: {
+    fontSize: 11,
+    color: '#FFF',
+    fontWeight: '600',
   },
   productCard: {
     backgroundColor: '#FFF',

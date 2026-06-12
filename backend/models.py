@@ -3,7 +3,7 @@ SmartCart 数据模型定义
 """
 from typing import List, Optional, Dict
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 # ==================== 商品相关 ====================
@@ -21,12 +21,13 @@ class Product(BaseModel):
     image_url: Optional[str] = None  # 图片 URL
     shop_name: Optional[str] = None  # 店铺名称
     platform: str = "taobao"  # 平台
+    is_demo: bool = False  # 是否为演示数据（降级/模拟时必须标记）
 
 
 class SearchRequest(BaseModel):
     """搜索请求"""
-    query: str  # 用户输入的自然语言
-    user_id: str = "default"  # 用户 ID
+    query: str = Field(..., min_length=1, max_length=100)  # 用户输入的自然语言
+    user_id: str = Field("default", max_length=64)  # 用户 ID
 
 
 class ParsedQuery(BaseModel):
@@ -47,6 +48,7 @@ class SearchResult(BaseModel):
     total_count: int  # 总数
     status: str = "completed"  # completed | failed | processing
     error: Optional[str] = None  # 错误信息
+    is_demo: bool = False  # 结果中包含演示数据
     created_at: datetime  # 创建时间
 
 

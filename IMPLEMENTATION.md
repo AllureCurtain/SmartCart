@@ -72,10 +72,11 @@ adb exec-out screencap -p > screenshot.png
 
 ### Phase 1：打通真实链路（最高优先级）
 
-- [ ] `TaobaoSearchSkill` 增加 `_capture_screenshot()`（adb screencap）
-- [ ] 截图提取改为显式路径传入
-- [ ] `Product`/`SearchResult` 增加 `is_demo` 字段，降级路径全部标记
-- [ ] 前端展示"演示数据"角标
+- [x] `TaobaoSearchSkill` 增加 `_capture_screenshot()`（adb screencap，含 PNG 校验、跨平台 adb、超时独立报错）
+- [x] 截图提取改为显式路径传入
+- [x] `Product`/`SearchResult` 增加 `is_demo` 字段，降级路径全部标记
+- [x] 前端展示"演示数据"横幅与角标
+- [x] 安全加固：搜索关键词清洗（防提示词注入）、请求长度限制、真机操作加设备锁
 - [ ] 真机端到端测试一次：输入需求 → 手机自动搜淘宝 → GLM-4V 提取 → App 显示真实商品
 
 **验收**：App 中显示的商品标题/价格与手机淘宝页面实际内容一致。
@@ -102,6 +103,7 @@ adb exec-out screencap -p > screenshot.png
 ### Phase 4：打磨与提交材料
 
 - [ ] UI 优化：商品图片占位、加载骨架屏、空状态
+- [ ] 后端代码审查遗留项：print 迁移到 logging、截图目录清理机制、skill 单元测试（mock subprocess）
 - [ ] 录制演示视频（建议分镜：真机自动操作画面 + App 画面同框）
 - [ ] README 状态区更新（"进行中"项移入"已实现"）
 - [ ] 可选加分项：京东搜索 Skill（验证 Skill 机制的可复用性）
