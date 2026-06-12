@@ -18,6 +18,7 @@ from skills.taobao_search import TaobaoSearchSkill
 from datetime import datetime
 from pathlib import Path
 import json
+import re
 import uuid
 import uvicorn
 
@@ -41,6 +42,13 @@ taobao_skill = TaobaoSearchSkill()
 TASKS_DIR = Path("data/tasks")
 TASKS_DIR.mkdir(parents=True, exist_ok=True)
 
+# task_id 由 uuid4 生成；拼接文件路径前必须校验格式，防止路径遍历
+TASK_ID_PATTERN = re.compile(r'^[0-9a-fA-F-]{8,64}$')
+
+
+def is_valid_task_id(task_id: str) -> bool:
+    return bool(TASK_ID_PATTERN.fullmatch(task_id))
+
 
 # ==================== 搜索相关 ====================
 
@@ -51,7 +59,10 @@ def execute_search_task(task_id: str, request: SearchRequest, parsed_query: Pars
         keyword = parsed_query.category
         products = taobao_skill.search(keyword, max_products=10)
 
-        # 2. 创建结果
+        # 2. 按用户偏好重排序（Memory → 自进化闭环）
+        products = preference_service.rank_products(request.user_id, products)
+
+        # 3. 创建结果
         result = SearchResult(
             task_id=task_id,
             query=request.query,
@@ -63,14 +74,14 @@ def execute_search_task(task_id: str, request: SearchRequest, parsed_query: Pars
             created_at=datetime.now()
         )
 
-        # 3. 保存结果
+        # 4. 保存结果
         result_file = TASKS_DIR / f"{task_id}.json"
         with open(result_file, 'w', encoding='utf-8') as f:
             data = result.dict()
             data['created_at'] = data['created_at'].isoformat()
             json.dump(data, f, ensure_ascii=False, indent=2)
 
-        # 4. 记录到偏好系统
+        # 5. 记录到偏好系统
         preference_service.record_search(request.user_id, request.query, parsed_query)
 
     except Exception as e:
@@ -132,6 +143,9 @@ async def get_search_result(task_id: str):
     获取搜索结果
     """
     try:
+        if not is_valid_task_id(task_id):
+            return APIResponse(success=False, error="非法的任务 ID")
+
         result_file = TASKS_DIR / f"{task_id}.json"
 
         if not result_file.exists():
@@ -174,23 +188,52 @@ async def get_user_preference(user_id: str):
         return APIResponse(success=False, error=str(e))
 
 
+def find_product_in_task(task_id: str, product_id: str) -> Product | None:
+    """从已保存的搜索任务结果中查找商品"""
+    if not is_valid_task_id(task_id):
+        return None
+
+    result_file = TASKS_DIR / f"{task_id}.json"
+    if not result_file.exists():
+        return None
+
+    with open(result_file, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+
+    for p in data.get('products', []):
+        if p.get('id') == product_id:
+            return Product(**p)
+    return None
+
+
 @app.post("/api/preference/action", response_model=APIResponse)
 async def record_user_action(action: UserAction):
     """
     记录用户行为（用于学习偏好）
+
+    点击/查看商品时，从任务结果中回查商品信息并写入偏好系统（Memory）。
     """
     try:
-        if action.action_type == "view" and action.product_id:
-            # 需要获取商品信息
-            # TODO: 从任务结果中查找商品
-            pass
-        elif action.action_type == "click" and action.product_id:
-            # TODO: 从任务结果中查找商品
-            pass
+        if action.action_type not in ("view", "click"):
+            return APIResponse(success=False, error=f"不支持的行为类型: {action.action_type}")
+        if not action.product_id or not action.task_id:
+            return APIResponse(success=False, error="缺少 product_id 或 task_id")
+
+        product = find_product_in_task(action.task_id, action.product_id)
+        if product is None:
+            return APIResponse(success=False, error="未找到对应商品")
+        if product.is_demo:
+            # 演示数据的假品牌不能写入偏好系统
+            return APIResponse(success=False, error="演示数据不记录偏好")
+
+        if action.action_type == "click":
+            preference_service.record_product_click(action.user_id, product)
+        else:
+            preference_service.record_product_view(action.user_id, product)
 
         return APIResponse(
             success=True,
-            message="行为已记录"
+            message=f"已记录 {action.action_type} 行为: {product.title[:20]}"
         )
     except Exception as e:
         return APIResponse(success=False, error=str(e))

@@ -85,6 +85,7 @@ class UserAction(BaseModel):
     user_id: str
     action_type: str  # search | click | view
     product_id: Optional[str] = None
+    task_id: Optional[str] = None  # 商品所属的搜索任务，用于回查商品信息
     query: Optional[str] = None
     timestamp: datetime
 

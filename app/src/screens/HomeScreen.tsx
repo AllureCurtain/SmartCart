@@ -17,6 +17,27 @@ export default function HomeScreen() {
   const [products, setProducts] = useState<Product[]>([]);
   const [searchStatus, setSearchStatus] = useState('');
   const [isDemo, setIsDemo] = useState(false);
+  const [taskId, setTaskId] = useState('');
+  const [clickedIds, setClickedIds] = useState<string[]>([]);
+
+  const handleProductClick = (product: Product) => {
+    // 演示数据的假品牌不写入 Memory
+    if (product.is_demo) {
+      return;
+    }
+    // 点击行为写入 Memory，用于偏好学习；上报失败不影响浏览
+    setClickedIds((prev) =>
+      prev.includes(product.id) ? prev : [...prev, product.id]
+    );
+    ApiService.recordAction({
+      user_id: 'default',
+      action_type: 'click',
+      product_id: product.id,
+      task_id: taskId,
+    }).catch(() => {
+      // 行为上报是非关键路径，失败时静默（不打断用户浏览）
+    });
+  };
 
   const handleSearch = async () => {
     if (!query.trim()) {
@@ -27,11 +48,13 @@ export default function HomeScreen() {
     setLoading(true);
     setProducts([]);
     setIsDemo(false);
+    setClickedIds([]);
     setSearchStatus('正在创建搜索任务...');
 
     try {
       // 1. 创建搜索任务
       const { task_id } = await ApiService.createSearch(query);
+      setTaskId(task_id);
       setSearchStatus('正在连接手机...');
 
       // 2. 轮询获取结果
@@ -127,7 +150,12 @@ export default function HomeScreen() {
             </View>
           )}
           {products.map((product) => (
-            <View key={product.id} style={styles.productCard}>
+            <TouchableOpacity
+              key={product.id}
+              style={styles.productCard}
+              activeOpacity={0.7}
+              onPress={() => handleProductClick(product)}
+            >
               {product.is_demo && (
                 <View style={styles.demoBadge}>
                   <Text style={styles.demoBadgeText}>演示数据</Text>
@@ -145,8 +173,13 @@ export default function HomeScreen() {
               {product.brand && (
                 <Text style={styles.productBrand}>品牌: {product.brand}</Text>
               )}
-              <Text style={styles.productPlatform}>平台: {product.platform}</Text>
-            </View>
+              <View style={styles.productFooter}>
+                <Text style={styles.productPlatform}>平台: {product.platform}</Text>
+                {clickedIds.includes(product.id) && (
+                  <Text style={styles.likedText}>❤️ 已记录偏好</Text>
+                )}
+              </View>
+            </TouchableOpacity>
           ))}
         </View>
       )}
@@ -296,5 +329,14 @@ const styles = StyleSheet.create({
   productPlatform: {
     fontSize: 12,
     color: '#999',
+  },
+  productFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  likedText: {
+    fontSize: 12,
+    color: '#FF3B30',
   },
 });

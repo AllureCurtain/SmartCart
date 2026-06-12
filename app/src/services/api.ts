@@ -73,6 +73,7 @@ class ApiService {
     user_id: string;
     action_type: string;
     product_id?: string;
+    task_id?: string;
   }): Promise<void> {
     await axios.post(`${API_BASE_URL}/api/preference/action`, {
       ...action,

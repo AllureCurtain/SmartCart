@@ -88,13 +88,15 @@ adb exec-out screencap -p > screenshot.png
 
 ### Phase 2：Memory 与自进化闭环
 
-- [ ] `record_user_action` 实现（从任务文件查商品 → 调 preference_service）
-- [ ] `UserAction` 模型增加 `task_id` 字段
-- [ ] 前端商品卡片 onPress 上报点击
-- [ ] 搜索结果按偏好权重重排序
-- [ ] 验证：点击某品牌商品 2-3 次后，再次搜索时该品牌排序明显靠前
+- [x] `record_user_action` 实现（从任务文件查商品 → 调 preference_service），含 task_id 路径遍历防护
+- [x] `UserAction` 模型增加 `task_id` 字段
+- [x] 前端商品卡片 onPress 上报点击（演示数据不上报，显示"已记录偏好"反馈）
+- [x] 搜索结果按偏好权重重排序（品牌分 + 标题特性命中 + 价格区间）
+- [x] 验证：单元测试确认点击华为商品后，重排序使华为从第 2 位升至第 1 位
 
 **验收**：演示"搜索 → 点击 → 再搜索，排序变化"的完整故事线。
+
+> ✅ **2026-06-12 逻辑验收通过**（单元测试级）。App 级完整故事线留待录制演示视频时一并展示。
 
 ### Phase 3：真实进度与真机运行
 

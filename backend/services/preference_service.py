@@ -3,7 +3,7 @@
 """
 import json
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 from datetime import datetime
 from collections import Counter
 
@@ -148,6 +148,31 @@ class PreferenceService:
                 avg=avg_price,
                 median=sorted(prices)[len(prices) // 2]
             )
+
+    def rank_products(self, user_id: str, products: List[Product]) -> List[Product]:
+        """
+        按用户偏好对商品重排序（自进化闭环：行为数据 → 权重 → 影响结果）
+
+        得分构成：品牌偏好分 + 标题命中特性偏好分 + 价格落在偏好区间加分。
+        无任何偏好数据时保持原序。
+        """
+        pref = self.get_preference(user_id)
+        if not (pref.brand_preferences or pref.feature_preferences or pref.price_preference):
+            return products
+
+        def score(p: Product) -> float:
+            s = 0.0
+            if p.brand and p.brand in pref.brand_preferences:
+                s += pref.brand_preferences[p.brand].score
+            for feature, weight in pref.feature_preferences.items():
+                if feature in p.title:
+                    s += weight
+            if pref.price_preference and \
+                    pref.price_preference.min <= p.price <= pref.price_preference.max:
+                s += 0.2
+            return s
+
+        return sorted(products, key=score, reverse=True)
 
     def get_recommendation_weights(self, user_id: str) -> Dict[str, float]:
         """
