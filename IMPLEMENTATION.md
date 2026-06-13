@@ -170,6 +170,43 @@ adb exec-out screencap -p > screenshot.png
 
 ---
 
+## 五、Phase 6：Agent 架构升级（对应岗位四项能力）
+
+针对岗位"熟悉 memory / skill / mcp / 自进化"的要求，把项目从"能跑的 Demo"升级为
+有清晰 Agent 架构的产品原型。设计见 `docs/superpowers/specs/`，分支
+`feature/agent-mcp-skills-evolution`。
+
+### 已完成
+
+- [x] **Skill 机制**：`skills/base.py`（Skill 抽象基类）+ `skills/registry.py`
+  （注册/去重/未知报错/MCP 兼容描述）；`skills/catalog.py` 把现有能力包装为 4 个
+  声明式技能并提供 `build_registry` 工厂。`GET /api/skills` 可查。
+- [x] **MemoryContextService**：记忆上下文 + 搜索前保守注入 + 搜索后打分/理由/重排。
+- [x] **AgentRuntime**：编排 解析→读记忆→调整查询→调工具→重排，产出可见 `agent_trace`；
+  通过注册表调用技能，使 MCP/REST 同源。
+- [x] **MCP Server**（`mcp_server.py`）：从注册表动态生成 MCP 工具，stdio 传输，
+  可接入 Claude Desktop 等客户端；调用转发回注册表，MCP 层不感知业务细节。
+- [x] **自进化（可感知）**：搜索前把记忆注入有效查询（用户意图永远优先，至多一品牌+一特性，
+  "不限品牌/随便看看"则不注入）；搜索后记忆驱动重排并给每个商品一句推荐理由；
+  全过程写入 AGENT TRACE。
+- [x] **main.py 接入**：搜索流程委托 AgentRuntime，任务读写走 `TaskStore`，
+  行为记录委托 `record_product_action` 技能（与 MCP 共用实现）。
+- [x] **数据模型**：`SearchResult` 增加 `agent_trace/memory_context/effective_query`，
+  `Product` 增加 `recommendation_score/recommendation_reason`，向后兼容。
+- [x] **前端**：AGENT TRACE 展示后端真实执行轨迹，商品卡片展示推荐理由。
+- [x] **测试**：后端 61 项 pytest 全绿（skill registry / memory context / catalog /
+  agent runtime / mcp server / search api 集成 + 既有用例）；前端 tsc 通过。
+- [x] **文档**：README 增加 Agent 架构表、新架构图、MCP 启动说明。
+
+### 待办（合并回 main 前）
+
+- [ ] 真机端到端验收新链路：解析→读记忆→注入查询→真机搜索→重排，确认 AGENT TRACE
+  显示记忆使用、商品卡片显示推荐理由、二次搜索可见地用上记忆。
+- [ ] 合并 `feature/agent-mcp-skills-evolution` → `main`。
+- [ ] （可选）MCP 实际接入 Claude Desktop 截图留证；给 Open-AutoGLM 提 PR（GBK 编码 bug）。
+
+---
+
 ## 四、约定
 
 - **诚实原则**：任何降级/模拟行为必须对用户可见，文档不写未实现的功能
