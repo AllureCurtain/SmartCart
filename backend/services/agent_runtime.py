@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class AgentSearchOutcome:
     products: List[Product]
+    parsed_query: ParsedQuery
     agent_trace: List[str] = field(default_factory=list)
     effective_query: str = ""
     memory_context: Dict[str, Any] = field(default_factory=dict)
@@ -96,6 +97,7 @@ class AgentRuntime:
 
         return AgentSearchOutcome(
             products=products,
+            parsed_query=parsed,
             agent_trace=trace,
             effective_query=effective_query,
             memory_context=context,
