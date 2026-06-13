@@ -1,7 +1,7 @@
 """
 SmartCart 数据模型定义
 """
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any
 from datetime import datetime
 from pydantic import BaseModel, Field
 
@@ -22,6 +22,8 @@ class Product(BaseModel):
     shop_name: Optional[str] = None  # 店铺名称
     platform: str = "taobao"  # 平台
     is_demo: bool = False  # 是否为演示数据（降级/模拟时必须标记）
+    recommendation_score: float = 0.0  # 推荐分数（Memory / 当前需求综合）
+    recommendation_reason: Optional[str] = None  # 推荐理由，前端展示一行
 
 
 class SearchRequest(BaseModel):
@@ -50,6 +52,9 @@ class SearchResult(BaseModel):
     progress: Optional[str] = None  # queued | controlling_phone | extracting | ranking
     error: Optional[str] = None  # 错误信息
     is_demo: bool = False  # 结果中包含演示数据
+    agent_trace: List[str] = Field(default_factory=list)  # Agent 可见执行轨迹
+    memory_context: Dict[str, Any] = Field(default_factory=dict)  # 本次使用的记忆上下文
+    effective_query: Optional[str] = None  # 实际输入淘宝的搜索词
     created_at: datetime  # 创建时间
 
 
