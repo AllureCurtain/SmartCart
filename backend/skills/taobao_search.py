@@ -120,6 +120,9 @@ class TaobaoSearchSkill:
             notify("controlling_phone")
             try:
                 # 执行 Open-AutoGLM
+                # encoding 必须与子进程的 PYTHONIOENCODING 一致：
+                # 中文 Windows 上 text=True 默认 GBK 解码，会被子进程的
+                # UTF-8 输出（emoji 等）击穿，读取线程崩溃导致管道堵塞超时
                 result = subprocess.run([
                     sys.executable,
                     str(self.autoglm_path / 'main.py'),
@@ -127,7 +130,8 @@ class TaobaoSearchSkill:
                     '--model', self.model,
                     '--apikey', self.api_key,
                     instruction
-                ], cwd=str(self.autoglm_path), env=env, capture_output=True, text=True, timeout=300)
+                ], cwd=str(self.autoglm_path), env=env, capture_output=True,
+                   text=True, encoding='utf-8', errors='replace', timeout=300)
             except subprocess.TimeoutExpired:
                 raise Exception("AutoGLM 执行超时（300秒）")
 
