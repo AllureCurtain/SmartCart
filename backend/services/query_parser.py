@@ -2,6 +2,7 @@
 需求解析服务 - 使用 GLM API 理解自然语言
 """
 import json
+import logging
 from openai import OpenAI
 from models import ParsedQuery
 import sys
@@ -10,6 +11,8 @@ from pathlib import Path
 # 添加 backend 目录到路径
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from config import ZHIPU_API_KEY, ZHIPU_BASE_URL, ZHIPU_TEXT_MODEL
+
+logger = logging.getLogger(__name__)
 
 
 class QueryParserService:
@@ -81,7 +84,7 @@ class QueryParserService:
 
         except Exception as e:
             # 解析失败，降级为整句搜索（不可静默：会导致淘宝收到自然语言长句）
-            print(f"Query parse failed, fallback to raw query: {e}")
+            logger.warning("Query parse failed, fallback to raw query: %s", e)
             return ParsedQuery(
                 category=query,
                 keywords=[query],
@@ -104,4 +107,4 @@ if __name__ == "__main__":
     for query in test_queries:
         print(f"\n输入: {query}")
         result = parser.parse(query)
-        print(f"解析: {result.dict()}")
+        print(f"解析: {result.model_dump()}")

@@ -20,7 +20,13 @@ from pathlib import Path
 import json
 import re
 import uuid
+import logging
 import uvicorn
+
+from app_logging import setup_logging
+
+setup_logging()
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="SmartCart API", version="1.0.0")
 
@@ -104,7 +110,8 @@ def execute_search_task(task_id: str, request: SearchRequest, parsed_query: Pars
         preference_service.record_search(request.user_id, request.query, parsed_query)
 
     except Exception as e:
-        # 保存错误结果
+        # 保存错误结果（同时记录到日志，否则后台任务异常会被静默吞掉）
+        logger.exception("Search task %s failed", task_id)
         write_task(SearchResult(
             task_id=task_id,
             query=request.query,
@@ -224,7 +231,7 @@ async def get_user_preference(user_id: str):
     """
     try:
         pref = preference_service.get_preference(user_id)
-        data = pref.dict()
+        data = pref.model_dump()
         data['updated_at'] = data['updated_at'].isoformat()
         for brand_key in data.get('brand_preferences', {}):
             data['brand_preferences'][brand_key]['last_updated'] = \

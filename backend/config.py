@@ -1,9 +1,12 @@
 """
 配置管理
 """
+import logging
 import os
 from pathlib import Path
 from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
 
 # 加载 Open-AutoGLM 的 .env 文件
 env_path = Path(__file__).parent.parent.parent / "Open-AutoGLM" / ".env"
@@ -34,4 +37,5 @@ ADB_PATH = os.getenv(
     r"C:\Users\AllureLove\AppData\Local\Microsoft\WinGet\Packages\Google.PlatformTools_Microsoft.Winget.Source_8wekyb3d8bbwe\platform-tools",
 )
 
-print(f"Config loaded successfully (Model: {ZHIPU_MODEL})")
+logger.info("Config loaded (agent=%s, vision=%s, text=%s)",
+            ZHIPU_MODEL, ZHIPU_VISION_MODEL, ZHIPU_TEXT_MODEL)

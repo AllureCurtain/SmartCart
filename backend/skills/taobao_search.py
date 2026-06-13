@@ -9,10 +9,13 @@ import threading
 import uuid
 import base64
 import json
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import List
 from openai import OpenAI
+
+logger = logging.getLogger(__name__)
 
 # 添加路径
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -115,7 +118,7 @@ class TaobaoSearchSkill:
         notify = on_progress or (lambda stage: None)
         # 演示模式：直接返回模拟数据（带 is_demo 标记）
         if self.demo_mode:
-            print(f"[演示模式] 模拟搜索: {keyword}")
+            logger.info("[demo mode] mock search: %s", keyword)
             return self._get_mock_products(keyword, max_products)
 
         # 真实模式：调用 Open-AutoGLM
@@ -155,7 +158,7 @@ class TaobaoSearchSkill:
 
             # Agent 执行时长波动大（1-5 分钟），保留尾部输出便于诊断
             if result.stdout:
-                print(f"AutoGLM done, output tail: ...{result.stdout[-200:]}")
+                logger.info("AutoGLM done, output tail: ...%s", result.stdout[-200:])
 
             # 手机已停留在搜索结果页，由后端主动截屏
             # （Open-AutoGLM 不持久化截图，必须自行截取）
@@ -190,8 +193,19 @@ class TaobaoSearchSkill:
 
         path = SCREENSHOT_DIR / f"{datetime.now():%Y%m%d_%H%M%S}_{uuid.uuid4().hex[:8]}.png"
         path.write_bytes(result.stdout)
-        print(f"Screenshot captured: {path.name} ({len(result.stdout) // 1024} KB)")
+        logger.info("Screenshot captured: %s (%d KB)", path.name, len(result.stdout) // 1024)
+        self._prune_screenshots()
         return path
+
+    @staticmethod
+    def _prune_screenshots(keep: int = 20) -> None:
+        """只保留最近 keep 张截图，避免每次全屏 PNG（约 1-3MB）无限堆积"""
+        shots = sorted(SCREENSHOT_DIR.glob("*.png"), key=lambda p: p.stat().st_mtime)
+        for old in shots[:-keep]:
+            try:
+                old.unlink()
+            except OSError:
+                pass  # 截图被占用等情况忽略，不影响主流程
 
     def _extract_products_from_screenshot(
         self, screenshot_path: Path, keyword: str, max_count: int
@@ -201,7 +215,7 @@ class TaobaoSearchSkill:
 
         提取失败时降级返回模拟数据，但所有降级数据带 is_demo=True 标记。
         """
-        print(f"Analyzing screenshot: {screenshot_path.name}")
+        logger.info("Analyzing screenshot: %s", screenshot_path.name)
 
         try:
             # 读取截图并编码为 base64
@@ -280,12 +294,11 @@ class TaobaoSearchSkill:
             if not products:
                 raise ValueError("截图中未识别出有效商品")
 
-            print(f"Extracted {len(products)} products")
+            logger.info("Extracted %d products", len(products))
             return products
 
         except Exception as e:
-            print(f"Product extraction failed: {e}")
-            print("   使用模拟数据作为降级方案")
+            logger.warning("Product extraction failed, fallback to mock data: %s", e)
             return self._get_mock_products(keyword, max_count)
 
     def _get_mock_products(self, keyword: str, max_count: int) -> List[Product]:

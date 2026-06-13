@@ -48,7 +48,7 @@ class PreferenceService:
         file_path = self.storage_path / f"{preference.user_id}.json"
 
         # 转换为可序列化格式
-        data = preference.dict()
+        data = preference.model_dump()
         data['updated_at'] = data['updated_at'].isoformat()
         for brand_key, brand_data in data.get('brand_preferences', {}).items():
             brand_data['last_updated'] = brand_data['last_updated'].isoformat()
@@ -225,4 +225,4 @@ if __name__ == "__main__":
 
     # 获取偏好
     pref = service.get_preference("test_user")
-    print(f"用户偏好: {pref.dict()}")
+    print(f"用户偏好: {pref.model_dump()}")

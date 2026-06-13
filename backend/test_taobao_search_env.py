@@ -20,6 +20,7 @@ def test_autoglm_subprocess_uses_utf8_io_encoding():
         class Result:
             returncode = 0
             stderr = ""
+            stdout = ""
 
         return Result()
 

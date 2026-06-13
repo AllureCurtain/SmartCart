@@ -160,8 +160,12 @@ adb exec-out screencap -p > screenshot.png
 > 提取 3 个真实商品（荣耀 Earbuds S ¥293.02 等），品牌清洗正确（无平台标签）。
 > 已知特性：AutoGLM 执行时长波动 1-5 分钟（模型逐步决策 + 淘宝弹窗/加载影响步数），
 > 属 Agent 固有特性；已加输出尾部日志便于诊断。
+- [x] 后端 print 迁移 logging（新增 app_logging.py 统一 stdout+UTF-8 配置；后台任务异常改 logger.exception 不再静默）
+- [x] 测试整顿：三个 ad-hoc 脚本（会真机控制/连服务器）重命名 manual_check_*.py 移出 pytest；新增 test_taobao_parsing / test_preference_ranking，pytest 全绿 18 passed
+- [x] 截图保留策略：只留最近 20 张，避免全屏 PNG 无限堆积
+- [x] pydantic `.dict()` 全部迁移 `model_dump()`
+- [ ] release APK（用户决定：先完成打包前全部工作，APK 最后做）
 - [ ] 录制演示视频（脚本见 README；新 UI 的 AGENT TRACE 是主角）
-- [ ] 后端 print 迁移 logging 并解决 uvicorn 重定向下的输出缓冲（排障时看不到日志）
 - [ ] 可选：滚动多屏采集更多商品 / 京东搜索 Skill
 
 ---
