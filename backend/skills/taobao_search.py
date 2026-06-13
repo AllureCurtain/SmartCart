@@ -45,6 +45,20 @@ def _sanitize_keyword(keyword: str) -> str:
     return cleaned[:MAX_KEYWORD_LENGTH]
 
 
+# 平台标签黑名单：视觉模型常把这些当成品牌，会污染 Memory 的品牌偏好
+_NOT_BRANDS = ('天猫', '淘宝', '京东', '百亿补贴', '旗舰店', '官方', '自营', '包邮')
+
+
+def _clean_brand(brand) -> str | None:
+    """过滤平台标签，只保留真实品牌名"""
+    if not brand:
+        return None
+    brand = str(brand).strip()
+    if not brand or any(label in brand for label in _NOT_BRANDS):
+        return None
+    return brand
+
+
 def _parse_float(value) -> float:
     """容错解析数值：模型可能返回 '¥343.82'、'343.82元' 等带符号字符串"""
     if value is None:
@@ -129,6 +143,7 @@ class TaobaoSearchSkill:
                     '--base-url', self.base_url,
                     '--model', self.model,
                     '--apikey', self.api_key,
+                    '--max-steps', '30',  # 搜索约需 10 步，封顶防止 Agent 徘徊
                     instruction
                 ], cwd=str(self.autoglm_path), env=env, capture_output=True,
                    text=True, encoding='utf-8', errors='replace', timeout=300)
@@ -215,7 +230,8 @@ class TaobaoSearchSkill:
     "rating": 评分（如果有）,
     "review_count": 评价数（如果有）,
     "sales": 销量（如果有）,
-    "brand": "品牌（如果能识别）"
+    "brand": "商品品牌名（如华为、荣耀、索尼）。注意"天猫""百亿补贴""旗舰店"
+是平台标签不是品牌，识别不出真实品牌就设为 null"
   }}
 ]
 
@@ -231,16 +247,12 @@ class TaobaoSearchSkill:
             # 解析返回的 JSON
             content = response.choices[0].message.content.strip()
 
-            # 移除可能的 markdown 代码块标记
-            if content.startswith("```json"):
-                content = content[7:]
-            if content.startswith("```"):
-                content = content[3:]
-            if content.endswith("```"):
-                content = content[:-3]
-            content = content.strip()
-
-            products_data = json.loads(content)
+            # 模型输出可能带 markdown 围栏或尾随说明文字，
+            # 定位 JSON 数组起点后用 raw_decode 取第一个完整值，忽略尾部杂质
+            start = content.find('[')
+            if start == -1:
+                raise ValueError(f"模型未返回 JSON 数组: {content[:80]}")
+            products_data, _ = json.JSONDecoder().raw_decode(content[start:])
 
             # 转换为 Product 对象
             products = []
@@ -257,7 +269,7 @@ class TaobaoSearchSkill:
                     rating=rating if 0 < rating <= 5 else None,
                     review_count=_parse_int(p.get('review_count')),
                     sales=_parse_int(p.get('sales')),
-                    brand=p.get('brand'),
+                    brand=_clean_brand(p.get('brand')),
                     platform="taobao"
                 ))
 

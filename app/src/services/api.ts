@@ -55,11 +55,21 @@ export interface UserPreference {
   search_history: string[];
 }
 
+export interface ParsedQuery {
+  category: string;
+  keywords: string[];
+  price_min?: number | null;
+  price_max?: number | null;
+  features: string[];
+}
+
 class ApiService {
   /**
    * 创建搜索任务
    */
-  async createSearch(query: string): Promise<{ task_id: string; status: string }> {
+  async createSearch(
+    query: string
+  ): Promise<{ task_id: string; status: string; parsed_query?: ParsedQuery }> {
     const response = await axios.post(`${API_BASE_URL}/api/search`, {
       query,
       user_id: 'default',

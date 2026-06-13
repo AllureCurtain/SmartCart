@@ -9,7 +9,7 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
-import ApiService, { Product } from '../services/api';
+import ApiService, { Product, ParsedQuery } from '../services/api';
 import { colors, fontSize, fontFamily, spacing, radius } from '../theme/tokens';
 
 // Agent 执行阶段（与后端 progress 字段一一对应，按执行顺序排列）
@@ -31,6 +31,20 @@ function getProductInitial(product: Product): string {
   return label.trim().slice(0, 1).toUpperCase();
 }
 
+/** 把解析结果压成一行可读摘要："蓝牙耳机 · ¥400-600 · 降噪" */
+function summarizeParsedQuery(parsed: ParsedQuery): string {
+  const parts = [parsed.category];
+  if (parsed.price_min != null || parsed.price_max != null) {
+    const min = parsed.price_min != null ? Math.round(parsed.price_min) : '?';
+    const max = parsed.price_max != null ? Math.round(parsed.price_max) : '?';
+    parts.push(`¥${min}-${max}`);
+  }
+  if (parsed.features?.length) {
+    parts.push(parsed.features.join('/'));
+  }
+  return parts.filter(Boolean).join(' · ');
+}
+
 export default function HomeScreen() {
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
@@ -43,6 +57,8 @@ export default function HomeScreen() {
   const [hasSubmittedSearch, setHasSubmittedSearch] = useState(false);
   // 当前 Agent 阶段：STAGES 的 key，或 'done' / 'failed'
   const [stage, setStage] = useState('');
+  // 需求解析摘要，显示在 AGENT TRACE 第一行
+  const [parsedSummary, setParsedSummary] = useState('');
 
   useEffect(() => {
     ApiService.getLatestSearchResult('default')
@@ -96,13 +112,17 @@ export default function HomeScreen() {
     setClickedIds([]);
     setHasSubmittedSearch(true);
     setStage('queued');
+    setParsedSummary('');
     setStatusTone('info');
     setSearchStatus('正在创建搜索任务...');
 
     try {
-      // 1. 创建搜索任务
-      const { task_id } = await ApiService.createSearch(query);
+      // 1. 创建搜索任务（后端同步完成需求解析）
+      const { task_id, parsed_query } = await ApiService.createSearch(query);
       setTaskId(task_id);
+      if (parsed_query) {
+        setParsedSummary(summarizeParsedQuery(parsed_query));
+      }
       setSearchStatus('任务已创建，等待执行');
 
       // 2. 轮询获取结果
@@ -229,10 +249,14 @@ export default function HomeScreen() {
           </View>
           {STAGES.map((s, index) => {
             const mark = stageMark(index);
+            const label =
+              s.key === 'queued' && parsedSummary
+                ? `解析需求 → ${parsedSummary}`
+                : s.label;
             return (
               <View key={s.key} style={styles.termLine}>
                 <Text style={[styles.termIcon, mark.style]}>{mark.icon}</Text>
-                <Text style={styles.termStep}>{s.label}</Text>
+                <Text style={styles.termStep}>{label}</Text>
               </View>
             );
           })}

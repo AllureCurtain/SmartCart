@@ -18,6 +18,10 @@ ZHIPU_BASE_URL = os.getenv('ZHIPU_BASE_URL')
 ZHIPU_MODEL = os.getenv('ZHIPU_MODEL', 'autoglm-phone')
 # 截图商品提取用的多模态模型（glm-4v-flash 免费）
 ZHIPU_VISION_MODEL = os.getenv('ZHIPU_VISION_MODEL', 'glm-4v-flash')
+# 需求解析用的对话模型（glm-4-flash 免费）。
+# 注意不能用 ZHIPU_MODEL：autoglm-phone 是手机操作 Agent 模型，
+# 不输出常规 JSON，解析必然失败并降级成整句搜索
+ZHIPU_TEXT_MODEL = os.getenv('ZHIPU_TEXT_MODEL', 'glm-4-flash')
 
 if not ZHIPU_API_KEY:
     raise ValueError("ZHIPU_API_KEY 未设置")
