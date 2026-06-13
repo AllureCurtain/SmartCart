@@ -35,6 +35,17 @@ export interface Product {
   brand?: string;
   platform: string;
   is_demo?: boolean;
+  recommendation_score?: number;
+  recommendation_reason?: string | null;
+}
+
+export interface MemoryContext {
+  top_brand?: string | null;
+  top_brands?: { brand: string; score: number; count: number }[];
+  features?: string[];
+  price_range?: { min: number; max: number } | null;
+  recent_queries?: string[];
+  has_signal?: boolean;
 }
 
 export interface SearchResult {
@@ -45,6 +56,9 @@ export interface SearchResult {
   products?: Product[];
   error?: string;
   is_demo?: boolean;
+  agent_trace?: string[];
+  effective_query?: string;
+  memory_context?: MemoryContext;
 }
 
 export interface UserPreference {
@@ -69,7 +83,7 @@ class ApiService {
    */
   async createSearch(
     query: string
-  ): Promise<{ task_id: string; status: string; parsed_query?: ParsedQuery }> {
+  ): Promise<{ task_id: string; status: string }> {
     const response = await axios.post(`${API_BASE_URL}/api/search`, {
       query,
       user_id: 'default',

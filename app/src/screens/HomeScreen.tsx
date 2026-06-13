@@ -9,10 +9,10 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
-import ApiService, { Product, ParsedQuery } from '../services/api';
+import ApiService, { Product } from '../services/api';
 import { colors, fontSize, fontFamily, spacing, radius } from '../theme/tokens';
 
-// Agent 执行阶段（与后端 progress 字段一一对应，按执行顺序排列）
+// 处理中阶段骨架（与后端 progress 字段对应）；完成后改用后端真实 agent_trace
 const STAGES = [
   { key: 'queued', label: '解析需求，创建搜索任务' },
   { key: 'controlling_phone', label: '控制手机 · 打开淘宝搜索' },
@@ -31,20 +31,6 @@ function getProductInitial(product: Product): string {
   return label.trim().slice(0, 1).toUpperCase();
 }
 
-/** 把解析结果压成一行可读摘要："蓝牙耳机 · ¥400-600 · 降噪" */
-function summarizeParsedQuery(parsed: ParsedQuery): string {
-  const parts = [parsed.category];
-  if (parsed.price_min != null || parsed.price_max != null) {
-    const min = parsed.price_min != null ? Math.round(parsed.price_min) : '?';
-    const max = parsed.price_max != null ? Math.round(parsed.price_max) : '?';
-    parts.push(`¥${min}-${max}`);
-  }
-  if (parsed.features?.length) {
-    parts.push(parsed.features.join('/'));
-  }
-  return parts.filter(Boolean).join(' · ');
-}
-
 export default function HomeScreen() {
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
@@ -57,8 +43,8 @@ export default function HomeScreen() {
   const [hasSubmittedSearch, setHasSubmittedSearch] = useState(false);
   // 当前 Agent 阶段：STAGES 的 key，或 'done' / 'failed'
   const [stage, setStage] = useState('');
-  // 需求解析摘要，显示在 AGENT TRACE 第一行
-  const [parsedSummary, setParsedSummary] = useState('');
+  // 后端返回的真实 Agent 执行轨迹（完成后填充，作为 AGENT TRACE 主体）
+  const [agentTrace, setAgentTrace] = useState<string[]>([]);
 
   useEffect(() => {
     ApiService.getLatestSearchResult('default')
@@ -71,6 +57,7 @@ export default function HomeScreen() {
         setIsDemo(!!result.is_demo);
         setQuery(result.query || '');
         setStage('done');
+        setAgentTrace(result.agent_trace || []);
         setStatusTone(result.is_demo ? 'warning' : 'success');
         setSearchStatus(
           `已恢复最近搜索结果，找到 ${result.products?.length || 0} 个商品`
@@ -112,17 +99,14 @@ export default function HomeScreen() {
     setClickedIds([]);
     setHasSubmittedSearch(true);
     setStage('queued');
-    setParsedSummary('');
+    setAgentTrace([]);
     setStatusTone('info');
     setSearchStatus('正在创建搜索任务...');
 
     try {
-      // 1. 创建搜索任务（后端同步完成需求解析）
-      const { task_id, parsed_query } = await ApiService.createSearch(query);
+      // 1. 创建搜索任务（解析/搜索/重排在后台执行）
+      const { task_id } = await ApiService.createSearch(query);
       setTaskId(task_id);
-      if (parsed_query) {
-        setParsedSummary(summarizeParsedQuery(parsed_query));
-      }
       setSearchStatus('任务已创建，等待执行');
 
       // 2. 轮询获取结果
@@ -159,6 +143,7 @@ export default function HomeScreen() {
           setProducts(result.products || []);
           setIsDemo(!!result.is_demo);
           setStage('done');
+          setAgentTrace(result.agent_trace || []);
           setStatusTone(result.is_demo ? 'warning' : 'success');
           setSearchStatus(`搜索完成，找到 ${result.products?.length || 0} 个商品`);
           setLoading(false);
@@ -247,19 +232,24 @@ export default function HomeScreen() {
               <Text style={styles.termTaskId}>task#{taskId.slice(0, 8)}</Text>
             ) : null}
           </View>
-          {STAGES.map((s, index) => {
-            const mark = stageMark(index);
-            const label =
-              s.key === 'queued' && parsedSummary
-                ? `解析需求 → ${parsedSummary}`
-                : s.label;
-            return (
-              <View key={s.key} style={styles.termLine}>
-                <Text style={[styles.termIcon, mark.style]}>{mark.icon}</Text>
-                <Text style={styles.termStep}>{label}</Text>
-              </View>
-            );
-          })}
+          {agentTrace.length > 0
+            ? // 完成后：展示后端真实 Agent 执行轨迹
+              agentTrace.map((line, index) => (
+                <View key={index} style={styles.termLine}>
+                  <Text style={[styles.termIcon, styles.termIconDone]}>✓</Text>
+                  <Text style={styles.termStep}>{line}</Text>
+                </View>
+              ))
+            : // 处理中：按 progress 展示阶段骨架
+              STAGES.map((s, index) => {
+                const mark = stageMark(index);
+                return (
+                  <View key={s.key} style={styles.termLine}>
+                    <Text style={[styles.termIcon, mark.style]}>{mark.icon}</Text>
+                    <Text style={styles.termStep}>{s.label}</Text>
+                  </View>
+                );
+              })}
           <View style={styles.termDivider} />
           <View style={styles.termMsgRow}>
             <Text style={[styles.termMsg, statusMessageStyle]}>
@@ -346,6 +336,11 @@ export default function HomeScreen() {
                       .join(' · ')}
                   </Text>
                 </View>
+                {!product.is_demo && product.recommendation_reason ? (
+                  <Text style={styles.recReason} numberOfLines={1}>
+                    {product.recommendation_reason}
+                  </Text>
+                ) : null}
                 <View style={styles.tagRow}>
                   {clickedIds.includes(product.id) && (
                     <View style={styles.prefTag}>
@@ -629,6 +624,11 @@ const styles = StyleSheet.create({
     fontSize: fontSize.micro,
     marginLeft: spacing.s,
     flexShrink: 1,
+  },
+  recReason: {
+    color: colors.prefFg,
+    fontSize: fontSize.micro,
+    marginTop: spacing.xs + 2,
   },
   tagRow: {
     flexDirection: 'row',
