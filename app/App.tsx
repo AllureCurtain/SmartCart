@@ -3,6 +3,7 @@ import { StyleSheet, TouchableOpacity, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import HomeScreen from './src/screens/HomeScreen';
 import PreferenceScreen from './src/screens/PreferenceScreen';
+import { colors, fontSize, spacing } from './src/theme/tokens';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('home');
@@ -13,19 +14,19 @@ export default function App() {
 
       <View style={styles.tabBar}>
         <TouchableOpacity
-          style={[styles.tab, activeTab === 'home' && styles.tabActive]}
+          style={styles.tab}
           onPress={() => setActiveTab('home')}
         >
           <Text style={[styles.tabText, activeTab === 'home' && styles.tabTextActive]}>
-            🏠 首页
+            首页
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.tab, activeTab === 'preference' && styles.tabActive]}
+          style={styles.tab}
           onPress={() => setActiveTab('preference')}
         >
           <Text style={[styles.tabText, activeTab === 'preference' && styles.tabTextActive]}>
-            🎯 偏好
+            偏好
           </Text>
         </TouchableOpacity>
       </View>
@@ -36,29 +37,27 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: colors.bg,
   },
   tabBar: {
     flexDirection: 'row',
-    backgroundColor: '#FFF',
+    backgroundColor: colors.bg,
     borderTopWidth: 1,
-    borderTopColor: '#E0E0E0',
+    borderTopColor: colors.hairline,
   },
   tab: {
     flex: 1,
-    paddingVertical: 16,
+    paddingVertical: spacing.l,
     alignItems: 'center',
   },
-  tabActive: {
-    borderBottomWidth: 3,
-    borderBottomColor: '#007AFF',
-  },
   tabText: {
-    fontSize: 16,
-    color: '#999',
+    fontSize: fontSize.label,
+    color: colors.meta,
+    letterSpacing: 1,
   },
   tabTextActive: {
-    color: '#007AFF',
-    fontWeight: '600',
+    color: colors.ink,
+    fontWeight: '800',
   },
 });
+

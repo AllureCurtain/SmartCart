@@ -10,14 +10,15 @@ import {
   Alert,
 } from 'react-native';
 import ApiService, { Product } from '../services/api';
+import { colors, fontSize, fontFamily, spacing, radius } from '../theme/tokens';
 
-// 后端任务阶段 → 用户可读文案
-const PROGRESS_TEXT: Record<string, string> = {
-  queued: '任务排队中...',
-  controlling_phone: '正在控制手机搜索淘宝...',
-  extracting: '正在提取商品信息...',
-  ranking: '正在按你的偏好排序...',
-};
+// Agent 执行阶段（与后端 progress 字段一一对应，按执行顺序排列）
+const STAGES = [
+  { key: 'queued', label: '解析需求，创建搜索任务' },
+  { key: 'controlling_phone', label: '控制手机 · 打开淘宝搜索' },
+  { key: 'extracting', label: '截屏 → GLM-4V 提取商品' },
+  { key: 'ranking', label: '按你的偏好重排序' },
+] as const;
 
 type StatusTone = 'info' | 'success' | 'warning' | 'error';
 
@@ -40,13 +41,8 @@ export default function HomeScreen() {
   const [taskId, setTaskId] = useState('');
   const [clickedIds, setClickedIds] = useState<string[]>([]);
   const [hasSubmittedSearch, setHasSubmittedSearch] = useState(false);
-
-  const statusToneStyle = {
-    info: styles.statusInfo,
-    success: styles.statusSuccess,
-    warning: styles.statusWarning,
-    error: styles.statusError,
-  }[statusTone];
+  // 当前 Agent 阶段：STAGES 的 key，或 'done' / 'failed'
+  const [stage, setStage] = useState('');
 
   useEffect(() => {
     ApiService.getLatestSearchResult('default')
@@ -58,6 +54,7 @@ export default function HomeScreen() {
         setProducts(result.products || []);
         setIsDemo(!!result.is_demo);
         setQuery(result.query || '');
+        setStage('done');
         setStatusTone(result.is_demo ? 'warning' : 'success');
         setSearchStatus(
           `已恢复最近搜索结果，找到 ${result.products?.length || 0} 个商品`
@@ -98,6 +95,7 @@ export default function HomeScreen() {
     setIsDemo(false);
     setClickedIds([]);
     setHasSubmittedSearch(true);
+    setStage('queued');
     setStatusTone('info');
     setSearchStatus('正在创建搜索任务...');
 
@@ -105,7 +103,7 @@ export default function HomeScreen() {
       // 1. 创建搜索任务
       const { task_id } = await ApiService.createSearch(query);
       setTaskId(task_id);
-      setSearchStatus('正在连接手机...');
+      setSearchStatus('任务已创建，等待执行');
 
       // 2. 轮询获取结果
       let attempts = 0;
@@ -115,6 +113,7 @@ export default function HomeScreen() {
         if (attempts >= maxAttempts) {
           setSearchStatus('搜索超时，请重试');
           setStatusTone('error');
+          setStage('failed');
           setLoading(false);
           return;
         }
@@ -139,29 +138,56 @@ export default function HomeScreen() {
         if (result.status === 'completed') {
           setProducts(result.products || []);
           setIsDemo(!!result.is_demo);
+          setStage('done');
           setStatusTone(result.is_demo ? 'warning' : 'success');
           setSearchStatus(`搜索完成，找到 ${result.products?.length || 0} 个商品`);
           setLoading(false);
         } else if (result.status === 'failed') {
+          setStage('failed');
           setStatusTone('error');
           setSearchStatus(`搜索失败：${result.error}`);
           setLoading(false);
         } else {
-          // 显示后端汇报的真实阶段
-          const stageText =
-            PROGRESS_TEXT[result.progress ?? ''] ?? '正在搜索...';
-          setSearchStatus(`${stageText} (${elapsed}秒)`);
+          // 同步后端汇报的真实阶段
+          const current = result.progress || 'queued';
+          setStage(current);
+          const label =
+            STAGES.find((s) => s.key === current)?.label ?? '正在搜索';
+          setSearchStatus(`${label} (${elapsed}s)`);
           setTimeout(pollResult, 2000);
         }
       };
 
       pollResult();
     } catch (error: any) {
+      setStage('failed');
       setStatusTone('error');
       Alert.alert('错误', error.message || '搜索失败');
       setLoading(false);
     }
   };
+
+  // 终端日志行的三种状态
+  const stageIndex = STAGES.findIndex((s) => s.key === stage);
+  const stageMark = (index: number): { icon: string; style: object } => {
+    if (stage === 'done' || index < stageIndex) {
+      return { icon: '✓', style: styles.termIconDone };
+    }
+    if (index === stageIndex && loading) {
+      return { icon: '●', style: styles.termIconActive };
+    }
+    if (stage === 'failed' && index === stageIndex) {
+      return { icon: '✕', style: styles.termIconFailed };
+    }
+    return { icon: '○', style: styles.termIconPending };
+  };
+
+  const statusMessageStyle = {
+    info: styles.termMsgInfo,
+    success: styles.termMsgSuccess,
+    warning: styles.termMsgWarning,
+    error: styles.termMsgError,
+  }[statusTone];
 
   return (
     <ScrollView
@@ -170,15 +196,14 @@ export default function HomeScreen() {
     >
       <View style={styles.header}>
         <Text style={styles.title}>SmartCart</Text>
-        <Text style={styles.subtitle}>移动端 AI 购物助手</Text>
+        <Text style={styles.subtitle}>说出需求，剩下的交给 Agent</Text>
       </View>
 
       <View style={styles.searchBox}>
-        <Text style={styles.inputLabel}>购物需求</Text>
         <TextInput
           style={styles.input}
           placeholder="告诉我你想买什么..."
-          placeholderTextColor="#8A8F98"
+          placeholderTextColor={colors.meta}
           value={query}
           onChangeText={setQuery}
           multiline
@@ -189,34 +214,48 @@ export default function HomeScreen() {
           disabled={loading}
         >
           <Text style={styles.buttonText}>
-            {loading ? '搜索中...' : '开始搜索'}
+            {loading ? '搜索中' : '开始搜索'}
           </Text>
         </TouchableOpacity>
       </View>
 
       {searchStatus ? (
-        <View style={[styles.statusBox, statusToneStyle]}>
-          <View style={styles.statusHeader}>
-            <View style={[styles.statusDot, statusToneStyle]} />
-            <Text style={styles.statusLabel}>任务状态</Text>
+        <View style={styles.terminal}>
+          <View style={styles.termHeader}>
+            <Text style={styles.termTitle}>AGENT TRACE</Text>
+            {taskId ? (
+              <Text style={styles.termTaskId}>task#{taskId.slice(0, 8)}</Text>
+            ) : null}
           </View>
-          <Text style={styles.statusText}>{searchStatus}</Text>
-          {loading && <ActivityIndicator size="small" color="#176B87" />}
+          {STAGES.map((s, index) => {
+            const mark = stageMark(index);
+            return (
+              <View key={s.key} style={styles.termLine}>
+                <Text style={[styles.termIcon, mark.style]}>{mark.icon}</Text>
+                <Text style={styles.termStep}>{s.label}</Text>
+              </View>
+            );
+          })}
+          <View style={styles.termDivider} />
+          <View style={styles.termMsgRow}>
+            <Text style={[styles.termMsg, statusMessageStyle]}>
+              {searchStatus}
+            </Text>
+            {loading && (
+              <ActivityIndicator size="small" color={colors.termAmber} />
+            )}
+          </View>
         </View>
       ) : null}
 
       {loading && products.length === 0 && (
         <View style={styles.skeletonList}>
           {[0, 1, 2].map((item) => (
-            <View key={item} style={styles.skeletonCard}>
+            <View key={item} style={styles.skeletonRow}>
               <View style={styles.skeletonThumb} />
               <View style={styles.skeletonBody}>
                 <View style={styles.skeletonLineWide} />
                 <View style={styles.skeletonLineShort} />
-                <View style={styles.skeletonMetaRow}>
-                  <View style={styles.skeletonChip} />
-                  <View style={styles.skeletonChip} />
-                </View>
               </View>
             </View>
           ))}
@@ -236,9 +275,16 @@ export default function HomeScreen() {
       {products.length > 0 && (
         <View style={styles.resultsContainer}>
           <View style={styles.resultsHeader}>
-            <Text style={styles.resultsTitle}>搜索结果</Text>
-            <Text style={styles.resultsCount}>{products.length} 件</Text>
+            <Text style={styles.resultsTitle}>为你找到 {products.length} 件</Text>
+            <Text style={styles.resultsCount}>
+              {isDemo ? '演示数据' : '来自淘宝 · 真实数据'}
+            </Text>
           </View>
+          {!isDemo && (
+            <Text style={styles.sortHint}>
+              已按你的偏好排序 · 点击商品会继续学习你的口味
+            </Text>
+          )}
           {isDemo && (
             <View style={styles.demoBanner}>
               <Text style={styles.demoBannerText}>
@@ -246,53 +292,47 @@ export default function HomeScreen() {
               </Text>
             </View>
           )}
-          {products.map((product) => (
+          {products.map((product, index) => (
             <TouchableOpacity
               key={product.id}
               style={[
-                styles.productCard,
-                clickedIds.includes(product.id) && styles.productCardSelected,
+                styles.productRow,
+                index === products.length - 1 && styles.productRowLast,
               ]}
-              activeOpacity={0.7}
+              activeOpacity={0.6}
               onPress={() => handleProductClick(product)}
             >
-              <View
-                style={[
-                  styles.productThumb,
-                  product.is_demo && styles.productThumbDemo,
-                ]}
-              >
+              <View style={styles.productThumb}>
                 <Text style={styles.productThumbText}>
                   {getProductInitial(product)}
                 </Text>
               </View>
               <View style={styles.productBody}>
-                <View style={styles.productTopRow}>
-                  {product.is_demo && (
-                    <View style={styles.demoBadge}>
-                      <Text style={styles.demoBadgeText}>演示数据</Text>
-                    </View>
-                  )}
-                  {clickedIds.includes(product.id) && (
-                    <View style={styles.preferenceBadge}>
-                      <Text style={styles.preferenceBadgeText}>已记录偏好</Text>
-                    </View>
-                  )}
-                </View>
                 <Text style={styles.productTitle} numberOfLines={2}>
                   {product.title}
                 </Text>
-                <Text style={styles.productPrice}>¥{formatPrice(product.price)}</Text>
-                <View style={styles.metaRow}>
-                  {product.brand && (
-                    <Text style={styles.metaChip} numberOfLines={1}>
-                      {product.brand}
-                    </Text>
+                <View style={styles.productPriceRow}>
+                  <Text style={styles.productPrice}>
+                    <Text style={styles.productPriceSymbol}>¥</Text>
+                    {formatPrice(product.price)}
+                  </Text>
+                  <Text style={styles.productMeta} numberOfLines={1}>
+                    {[product.brand, product.platform]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </Text>
+                </View>
+                <View style={styles.tagRow}>
+                  {clickedIds.includes(product.id) && (
+                    <View style={styles.prefTag}>
+                      <Text style={styles.prefTagText}>偏好命中 · 已学习</Text>
+                    </View>
                   )}
-                  <Text style={styles.metaChip}>{product.platform}</Text>
-                  {product.rating ? (
-                    <Text style={styles.metaChip}>{product.rating} 分</Text>
-                  ) : null}
+                  {product.is_demo && (
+                    <View style={styles.demoTag}>
+                      <Text style={styles.demoTagText}>演示数据</Text>
+                    </View>
+                  )}
                 </View>
               </View>
             </TouchableOpacity>
@@ -306,309 +346,294 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F6F7F9',
+    backgroundColor: colors.bg,
   },
   contentContainer: {
-    paddingBottom: 32,
+    paddingBottom: spacing.xxxl,
   },
   header: {
-    paddingHorizontal: 20,
-    paddingTop: 60,
-    paddingBottom: 42,
-    backgroundColor: '#203034',
+    paddingHorizontal: spacing.xxl,
+    paddingTop: spacing.xxxl + spacing.xxl,
+    paddingBottom: spacing.l,
   },
   title: {
-    fontSize: 34,
+    fontSize: fontSize.display,
     fontWeight: '800',
-    color: '#FFF',
+    color: colors.ink,
+    letterSpacing: -0.5,
   },
   subtitle: {
-    fontSize: 16,
-    color: '#D8E1E4',
-    marginTop: 6,
+    fontSize: fontSize.label,
+    color: colors.meta,
+    marginTop: spacing.xs + 2,
   },
   searchBox: {
-    padding: 16,
-    backgroundColor: '#FFF',
-    marginTop: -22,
-    borderRadius: 8,
-    marginHorizontal: 16,
-    shadowColor: '#1D2B2F',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 3,
-  },
-  inputLabel: {
-    color: '#2E3A3E',
-    fontSize: 13,
-    fontWeight: '700',
-    marginBottom: 8,
+    paddingHorizontal: spacing.xl,
+    marginBottom: spacing.l,
   },
   input: {
-    borderWidth: 1,
-    borderColor: '#DDE3E6',
-    borderRadius: 8,
-    padding: 14,
-    fontSize: 16,
+    backgroundColor: colors.surface,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    padding: spacing.l,
+    fontSize: fontSize.body,
     minHeight: 80,
-    color: '#1E2528',
+    color: colors.ink,
     textAlignVertical: 'top',
-    backgroundColor: '#FAFBFC',
   },
   button: {
-    backgroundColor: '#176B87',
-    borderRadius: 8,
-    padding: 15,
-    marginTop: 12,
+    backgroundColor: colors.ink,
+    borderRadius: radius.lg,
+    padding: spacing.l - 1,
+    marginTop: spacing.m,
     alignItems: 'center',
   },
   buttonDisabled: {
-    backgroundColor: '#87959A',
+    opacity: 0.4,
   },
   buttonText: {
-    color: '#FFF',
-    fontSize: 16,
+    color: colors.accentOn,
+    fontSize: fontSize.body - 0.5,
     fontWeight: '700',
+    letterSpacing: 2,
   },
-  statusBox: {
-    margin: 16,
-    padding: 16,
-    backgroundColor: '#FFF',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#DDE3E6',
+  terminal: {
+    marginHorizontal: spacing.xl,
+    marginBottom: spacing.l,
+    backgroundColor: colors.termBg,
+    borderRadius: radius.md,
+    padding: spacing.l,
   },
-  statusInfo: {
-    borderColor: '#B8D7E3',
-    backgroundColor: '#F3FAFC',
+  termHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: spacing.m,
   },
-  statusSuccess: {
-    borderColor: '#A8D5BE',
-    backgroundColor: '#F3FBF7',
+  termTitle: {
+    color: colors.termDim,
+    fontSize: fontSize.micro - 1,
+    fontFamily: fontFamily.mono,
+    letterSpacing: 1.5,
   },
-  statusWarning: {
-    borderColor: '#E2C27C',
-    backgroundColor: '#FFF8E8',
+  termTaskId: {
+    color: colors.termDim,
+    fontSize: fontSize.micro - 1,
+    fontFamily: fontFamily.mono,
   },
-  statusError: {
-    borderColor: '#E0A5A5',
-    backgroundColor: '#FFF5F5',
-  },
-  statusHeader: {
+  termLine: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
+    paddingVertical: spacing.xs + 1,
   },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 8,
+  termIcon: {
+    width: 18,
+    fontSize: fontSize.term,
+    fontFamily: fontFamily.mono,
   },
-  statusLabel: {
-    color: '#2E3A3E',
-    fontSize: 13,
-    fontWeight: '700',
+  termIconDone: { color: colors.termGreen },
+  termIconActive: { color: colors.termAmber },
+  termIconFailed: { color: colors.termRed },
+  termIconPending: { color: colors.termDim },
+  termStep: {
+    color: colors.termText,
+    fontSize: fontSize.term,
+    fontFamily: fontFamily.mono,
+    flex: 1,
   },
-  statusText: {
-    fontSize: 14,
-    color: '#435057',
-    lineHeight: 20,
-    marginBottom: 8,
+  termDivider: {
+    height: 1,
+    backgroundColor: colors.termBorder,
+    marginVertical: spacing.s + 2,
   },
-  skeletonList: {
-    paddingHorizontal: 16,
-    marginTop: 2,
-  },
-  skeletonCard: {
+  termMsgRow: {
     flexDirection: 'row',
-    backgroundColor: '#FFF',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#E6EBEE',
-    padding: 12,
-    marginBottom: 10,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  termMsg: {
+    fontSize: fontSize.term,
+    fontFamily: fontFamily.mono,
+    flex: 1,
+    lineHeight: 18,
+  },
+  termMsgInfo: { color: colors.termDim },
+  termMsgSuccess: { color: colors.termGreen },
+  termMsgWarning: { color: colors.termAmber },
+  termMsgError: { color: colors.termRed },
+  skeletonList: {
+    paddingHorizontal: spacing.xl,
+  },
+  skeletonRow: {
+    flexDirection: 'row',
+    paddingVertical: spacing.l,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.hairline,
   },
   skeletonThumb: {
-    width: 58,
-    height: 58,
-    borderRadius: 8,
-    backgroundColor: '#E7ECEF',
-    marginRight: 12,
+    width: 64,
+    height: 64,
+    borderRadius: radius.md,
+    backgroundColor: colors.skeleton,
+    marginRight: spacing.l - 2,
   },
   skeletonBody: {
     flex: 1,
     justifyContent: 'center',
   },
   skeletonLineWide: {
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#E7ECEF',
-    marginBottom: 10,
-    width: '86%',
+    height: 13,
+    borderRadius: radius.sm - 2,
+    backgroundColor: colors.skeleton,
+    marginBottom: spacing.m,
+    width: '88%',
   },
   skeletonLineShort: {
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#EDF1F3',
-    marginBottom: 12,
-    width: '46%',
-  },
-  skeletonMetaRow: {
-    flexDirection: 'row',
-  },
-  skeletonChip: {
-    width: 54,
-    height: 20,
-    borderRadius: 8,
-    backgroundColor: '#EDF1F3',
-    marginRight: 8,
+    height: 13,
+    borderRadius: radius.sm - 2,
+    backgroundColor: colors.skeleton,
+    width: '42%',
   },
   emptyState: {
-    marginHorizontal: 16,
-    marginTop: 2,
-    padding: 18,
-    borderRadius: 8,
+    marginHorizontal: spacing.xl,
+    padding: spacing.xl - 2,
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: '#E1E6E9',
-    backgroundColor: '#FFF',
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
   },
   emptyTitle: {
-    fontSize: 16,
+    fontSize: fontSize.body,
     fontWeight: '700',
-    color: '#1E2528',
-    marginBottom: 6,
+    color: colors.ink,
+    marginBottom: spacing.xs + 2,
   },
   emptyText: {
-    fontSize: 14,
-    color: '#667178',
+    fontSize: fontSize.label,
+    color: colors.sub,
     lineHeight: 20,
   },
   resultsContainer: {
-    paddingHorizontal: 16,
-    paddingTop: 4,
+    paddingHorizontal: spacing.xl,
   },
   resultsHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'baseline',
     justifyContent: 'space-between',
-    marginBottom: 12,
+    paddingTop: spacing.s,
   },
   resultsTitle: {
-    fontSize: 20,
+    fontSize: fontSize.title,
     fontWeight: '800',
-    color: '#1E2528',
+    color: colors.ink,
+    letterSpacing: -0.3,
   },
   resultsCount: {
-    color: '#667178',
-    fontSize: 13,
-    fontWeight: '700',
+    color: colors.meta,
+    fontSize: fontSize.micro + 0.5,
+  },
+  sortHint: {
+    color: colors.meta,
+    fontSize: fontSize.micro,
+    marginTop: spacing.xs + 2,
+    marginBottom: spacing.xs,
   },
   demoBanner: {
-    backgroundColor: '#FFF8E8',
-    borderRadius: 8,
+    backgroundColor: colors.warnBg,
+    borderRadius: radius.sm,
     borderWidth: 1,
-    borderColor: '#E2C27C',
-    padding: 12,
-    marginBottom: 12,
+    borderColor: colors.warnBorder,
+    padding: spacing.m,
+    marginTop: spacing.m,
   },
   demoBannerText: {
-    fontSize: 13,
-    color: '#76520B',
+    fontSize: fontSize.micro + 1,
+    color: colors.warnFg,
     lineHeight: 18,
   },
-  demoBadge: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#E9D6A3',
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    marginRight: 6,
-    marginBottom: 8,
-  },
-  demoBadgeText: {
-    fontSize: 11,
-    color: '#6C4D09',
-    fontWeight: '700',
-  },
-  preferenceBadge: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#DDEFE7',
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    marginBottom: 8,
-  },
-  preferenceBadgeText: {
-    fontSize: 11,
-    color: '#25664B',
-    fontWeight: '700',
-  },
-  productCard: {
+  productRow: {
     flexDirection: 'row',
-    backgroundColor: '#FFF',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: '#E1E6E9',
+    paddingVertical: spacing.l + 2,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.hairline,
   },
-  productCardSelected: {
-    borderColor: '#A8D5BE',
-    backgroundColor: '#FBFFFD',
+  productRowLast: {
+    borderBottomWidth: 0,
   },
   productThumb: {
-    width: 58,
-    height: 58,
-    borderRadius: 8,
-    backgroundColor: '#E3EEF1',
+    width: 64,
+    height: 64,
+    borderRadius: radius.md,
+    backgroundColor: colors.skeleton,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
-  },
-  productThumbDemo: {
-    backgroundColor: '#F1E4C0',
+    marginRight: spacing.l - 2,
   },
   productThumbText: {
-    color: '#176B87',
-    fontSize: 20,
+    color: colors.ink,
+    fontSize: fontSize.title + 2,
     fontWeight: '800',
   },
   productBody: {
     flex: 1,
     minWidth: 0,
   },
-  productTopRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-  },
   productTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#20272A',
-    lineHeight: 21,
-    marginBottom: 8,
+    color: colors.ink,
+    fontSize: fontSize.item,
+    lineHeight: 22,
+    fontWeight: '600',
+    marginBottom: spacing.s,
+  },
+  productPriceRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
   },
   productPrice: {
-    fontSize: 22,
+    color: colors.ink,
+    fontSize: fontSize.price,
     fontWeight: '800',
-    color: '#C83A3A',
-    marginBottom: 8,
+    letterSpacing: -0.5,
   },
-  metaRow: {
+  productPriceSymbol: {
+    fontSize: fontSize.label,
+    fontWeight: '700',
+  },
+  productMeta: {
+    color: colors.meta,
+    fontSize: fontSize.micro,
+    marginLeft: spacing.s,
+    flexShrink: 1,
+  },
+  tagRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    marginTop: spacing.s,
   },
-  metaChip: {
-    fontSize: 12,
-    color: '#546168',
-    backgroundColor: '#F0F3F5',
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    marginRight: 6,
-    marginBottom: 6,
-    maxWidth: 116,
+  prefTag: {
+    backgroundColor: colors.prefBg,
+    borderRadius: radius.sm - 2,
+    paddingHorizontal: spacing.s + 1,
+    paddingVertical: 3,
+    marginRight: spacing.xs + 2,
+  },
+  prefTagText: {
+    fontSize: fontSize.micro - 1,
+    color: colors.prefFg,
+    fontWeight: '700',
+  },
+  demoTag: {
+    backgroundColor: colors.warnBg,
+    borderWidth: 1,
+    borderColor: colors.warnBorder,
+    borderRadius: radius.sm - 2,
+    paddingHorizontal: spacing.s + 1,
+    paddingVertical: 3,
+  },
+  demoTagText: {
+    fontSize: fontSize.micro - 1,
+    color: colors.warnFg,
+    fontWeight: '700',
   },
 });

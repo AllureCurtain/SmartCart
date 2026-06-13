@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SmartCart 风格方向对比稿</title>
+<style>
+  :root {
+    --page-bg: #ECEEF1;
+    --page-ink: #1B1F24;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--page-bg);
+    color: var(--page-ink);
+    font-family: "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+    padding: 48px 32px 80px;
+  }
+  .page-header { max-width: 1380px; margin: 0 auto 40px; }
+  .page-header h1 { font-size: 28px; font-weight: 800; margin-bottom: 10px; }
+  .page-header p { color: #5A6470; font-size: 15px; line-height: 1.7; max-width: 720px; }
+  .compare {
+    display: flex; gap: 36px; justify-content: center;
+    align-items: flex-start; flex-wrap: wrap;
+    max-width: 1380px; margin: 0 auto;
+  }
+  .option { width: 390px; flex-shrink: 0; }
+  .phone {
+    width: 390px; height: 760px; border-radius: 36px;
+    overflow: hidden; position: relative;
+    box-shadow: 0 24px 60px rgba(20,28,40,.18), 0 2px 8px rgba(20,28,40,.10);
+    display: flex; flex-direction: column;
+  }
+  .screen { flex: 1; overflow-y: auto; scrollbar-width: none; }
+  .screen::-webkit-scrollbar { display: none; }
+  .opt-meta { margin-top: 22px; padding: 0 6px; }
+  .opt-name { font-size: 19px; font-weight: 800; margin-bottom: 6px; }
+  .opt-desc { font-size: 13.5px; color: #5A6470; line-height: 1.75; margin-bottom: 14px; }
+  .swatches { display: flex; gap: 8px; }
+  .swatch {
+    width: 40px; height: 40px; border-radius: 10px;
+    border: 1px solid rgba(0,0,0,.08); position: relative;
+  }
+  .swatch span {
+    position: absolute; top: 44px; left: 50%; transform: translateX(-50%);
+    font-size: 10px; color: #8A93A0; white-space: nowrap;
+    font-family: ui-monospace, Consolas, monospace;
+  }
+  .swatches { margin-bottom: 26px; }
+
+  /* ============================================================
+     方向 1 · Agent 控制台（深色 / 工程感 / 过程即主角）
+     ============================================================ */
+  .t1 .phone { background: #0D1117; }
+  .t1 .statusbar {
+    display: flex; justify-content: space-between; padding: 14px 22px 8px;
+    color: #7D8590; font-size: 12px; font-family: ui-monospace, Consolas, monospace;
+  }
+  .t1 .appbar { padding: 18px 22px 14px; display: flex; align-items: baseline; gap: 10px; }
+  .t1 .brand { color: #E6EDF3; font-size: 24px; font-weight: 800; letter-spacing: .5px; }
+  .t1 .brand-tag {
+    color: #3FB950; font-size: 11px; font-family: ui-monospace, Consolas, monospace;
+    border: 1px solid #1F6F37; border-radius: 4px; padding: 2px 7px; letter-spacing: 1px;
+  }
+  .t1 .query-card {
+    margin: 6px 16px 14px; background: #161B22; border: 1px solid #30363D;
+    border-radius: 10px; padding: 14px 16px;
+  }
+  .t1 .query-label {
+    color: #7D8590; font-size: 11px; font-family: ui-monospace, Consolas, monospace;
+    letter-spacing: 1.5px; margin-bottom: 8px;
+  }
+  .t1 .query-text { color: #E6EDF3; font-size: 16px; line-height: 1.5; }
+  .t1 .run-btn {
+    margin-top: 14px; background: #238636; color: #FFF; text-align: center;
+    border-radius: 8px; padding: 12px; font-size: 15px; font-weight: 700;
+  }
+  .t1 .agent-log {
+    margin: 0 16px 16px; background: #161B22; border: 1px solid #30363D;
+    border-radius: 10px; padding: 14px 16px;
+    font-family: ui-monospace, Consolas, monospace;
+  }
+  .t1 .log-title {
+    color: #7D8590; font-size: 11px; letter-spacing: 1.5px; margin-bottom: 12px;
+    display: flex; justify-content: space-between;
+  }
+  .t1 .log-line { display: flex; align-items: center; gap: 10px; padding: 5px 0; font-size: 12.5px; }
+  .t1 .log-line .tick { color: #3FB950; width: 14px; }
+  .t1 .log-line .step { color: #C9D1D9; }
+  .t1 .log-line .ms { color: #7D8590; margin-left: auto; font-size: 11px; }
+  .t1 .log-line.active .tick { color: #E3B341; }
+  .t1 .results-head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    padding: 4px 20px 10px;
+  }
+  .t1 .results-title { color: #E6EDF3; font-size: 17px; font-weight: 700; }
+  .t1 .results-count {
+    color: #3FB950; font-size: 12px; font-family: ui-monospace, Consolas, monospace;
+  }
+  .t1 .card {
+    margin: 0 16px 10px; background: #161B22; border: 1px solid #30363D;
+    border-radius: 10px; padding: 14px; display: flex; gap: 12px;
+  }
+  .t1 .card.hit { border-color: #1F6F37; background: #12211A; }
+  .t1 .thumb {
+    width: 54px; height: 54px; border-radius: 8px; background: #21262D;
+    color: #58A6FF; display: flex; align-items: center; justify-content: center;
+    font-size: 20px; font-weight: 800; flex-shrink: 0;
+  }
+  .t1 .c-body { flex: 1; min-width: 0; }
+  .t1 .c-title {
+    color: #E6EDF3; font-size: 14px; line-height: 1.45; font-weight: 600;
+    margin-bottom: 7px; overflow: hidden; display: -webkit-box;
+    -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  }
+  .t1 .c-price {
+    color: #3FB950; font-size: 19px; font-weight: 800;
+    font-family: ui-monospace, Consolas, monospace; margin-bottom: 7px;
+  }
+  .t1 .c-meta { display: flex; gap: 6px; flex-wrap: wrap; }
+  .t1 .chip {
+    font-size: 11px; color: #8B949E; background: #21262D;
+    border-radius: 4px; padding: 3px 8px;
+    font-family: ui-monospace, Consolas, monospace;
+  }
+  .t1 .chip.pref { color: #3FB950; background: #12261A; border: 1px solid #1F6F37; }
+  .t1 .tabbar {
+    display: flex; border-top: 1px solid #30363D; background: #0D1117;
+  }
+  .t1 .tab { flex: 1; text-align: center; padding: 15px 0 18px; font-size: 13px; color: #7D8590; }
+  .t1 .tab.on { color: #3FB950; font-weight: 700; }
+
+  /* ============================================================
+     方向 2 · 克制电商（浅色 / 极简排版 / 信息层级是主角）
+     ============================================================ */
+  .t2 .phone { background: #FAFAF8; }
+  .t2 .statusbar {
+    display: flex; justify-content: space-between; padding: 14px 22px 8px;
+    color: #9CA0A8; font-size: 12px;
+  }
+  .t2 .appbar { padding: 24px 24px 18px; }
+  .t2 .brand { color: #111418; font-size: 30px; font-weight: 800; letter-spacing: -.5px; }
+  .t2 .brand-sub { color: #878D96; font-size: 13.5px; margin-top: 6px; }
+  .t2 .query-card { margin: 0 20px 18px; }
+  .t2 .query-input {
+    background: #FFF; border: 1.5px solid #E3E4E0; border-radius: 14px;
+    padding: 16px; color: #111418; font-size: 16px; line-height: 1.5;
+  }
+  .t2 .run-btn {
+    margin-top: 12px; background: #111418; color: #FFF; text-align: center;
+    border-radius: 14px; padding: 15px; font-size: 15.5px; font-weight: 700;
+    letter-spacing: 2px;
+  }
+  .t2 .stepper {
+    margin: 0 20px 20px; display: flex; align-items: center; gap: 0;
+  }
+  .t2 .stp { display: flex; flex-direction: column; align-items: center; flex: 1; }
+  .t2 .stp .dot {
+    width: 22px; height: 22px; border-radius: 50%; background: #111418; color: #FFF;
+    font-size: 11px; display: flex; align-items: center; justify-content: center;
+    margin-bottom: 7px;
+  }
+  .t2 .stp .lbl { font-size: 10.5px; color: #6B7178; }
+  .t2 .stp-line { height: 1.5px; background: #111418; flex: 1; margin: 0 2px 18px; }
+  .t2 .results-head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    padding: 6px 24px 4px;
+  }
+  .t2 .results-title { color: #111418; font-size: 20px; font-weight: 800; letter-spacing: -.3px; }
+  .t2 .results-count { color: #878D96; font-size: 12.5px; }
+  .t2 .sort-hint {
+    margin: 2px 24px 14px; color: #878D96; font-size: 12px;
+  }
+  .t2 .sort-hint b { color: #111418; font-weight: 700; }
+  .t2 .card {
+    margin: 0 20px; padding: 18px 4px; display: flex; gap: 14px;
+    border-bottom: 1px solid #ECECE8;
+  }
+  .t2 .thumb {
+    width: 64px; height: 64px; border-radius: 12px; background: #F0F0EC;
+    color: #111418; display: flex; align-items: center; justify-content: center;
+    font-size: 22px; font-weight: 800; flex-shrink: 0;
+  }
+  .t2 .c-body { flex: 1; min-width: 0; }
+  .t2 .c-title {
+    color: #111418; font-size: 15px; line-height: 1.5; font-weight: 600;
+    margin-bottom: 8px; overflow: hidden; display: -webkit-box;
+    -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  }
+  .t2 .c-row { display: flex; align-items: baseline; justify-content: space-between; }
+  .t2 .c-price { color: #111418; font-size: 21px; font-weight: 800; letter-spacing: -.5px; }
+  .t2 .c-price small { font-size: 13px; font-weight: 700; }
+  .t2 .c-meta { color: #878D96; font-size: 12px; }
+  .t2 .pref-tag {
+    display: inline-block; margin-top: 8px; font-size: 11px; color: #0E7A4A;
+    background: #E9F6EF; border-radius: 6px; padding: 3px 9px; font-weight: 700;
+  }
+  .t2 .tabbar {
+    display: flex; border-top: 1px solid #ECECE8; background: #FAFAF8;
+  }
+  .t2 .tab { flex: 1; text-align: center; padding: 15px 0 18px; font-size: 13px; color: #9CA0A8; }
+  .t2 .tab.on { color: #111418; font-weight: 800; }
+
+  /* ============================================================
+     方向 3 · 暖感助手（暖白 / 圆润 / 人格化文案是主角）
+     ============================================================ */
+  .t3 .phone { background: #FAF6F0; }
+  .t3 .statusbar {
+    display: flex; justify-content: space-between; padding: 14px 22px 8px;
+    color: #B0A89C; font-size: 12px;
+  }
+  .t3 .appbar { padding: 22px 24px 16px; display: flex; align-items: center; gap: 12px; }
+  .t3 .avatar {
+    width: 44px; height: 44px; border-radius: 16px; background: #E8643C;
+    display: flex; align-items: center; justify-content: center; font-size: 22px;
+    box-shadow: 0 4px 12px rgba(232,100,60,.28);
+  }
+  .t3 .brand { color: #2D2A26; font-size: 22px; font-weight: 800; }
+  .t3 .brand-sub { color: #A39B8E; font-size: 12.5px; margin-top: 3px; }
+  .t3 .bubble {
+    margin: 4px 20px 16px; background: #FFF; border-radius: 20px 20px 20px 6px;
+    padding: 16px 18px; color: #5A544B; font-size: 14px; line-height: 1.7;
+    box-shadow: 0 2px 10px rgba(120,100,80,.07);
+  }
+  .t3 .bubble b { color: #E8643C; }
+  .t3 .query-card {
+    margin: 0 20px 16px; background: #FFF; border-radius: 22px; padding: 16px;
+    box-shadow: 0 2px 10px rgba(120,100,80,.07);
+  }
+  .t3 .query-input {
+    background: #FAF6F0; border-radius: 16px; padding: 15px;
+    color: #2D2A26; font-size: 15.5px; line-height: 1.5;
+  }
+  .t3 .run-btn {
+    margin-top: 12px; background: #E8643C; color: #FFF; text-align: center;
+    border-radius: 999px; padding: 14px; font-size: 15.5px; font-weight: 800;
+    box-shadow: 0 6px 16px rgba(232,100,60,.30);
+  }
+  .t3 .journey {
+    margin: 0 20px 16px; background: #FFF; border-radius: 22px; padding: 16px 18px;
+    box-shadow: 0 2px 10px rgba(120,100,80,.07);
+  }
+  .t3 .journey-title { color: #2D2A26; font-size: 13.5px; font-weight: 800; margin-bottom: 12px; }
+  .t3 .j-step { display: flex; gap: 12px; padding: 6px 0; align-items: flex-start; }
+  .t3 .j-ico {
+    width: 26px; height: 26px; border-radius: 50%; background: #FBEAE3; color: #E8643C;
+    display: flex; align-items: center; justify-content: center; font-size: 13px; flex-shrink: 0;
+  }
+  .t3 .j-txt { font-size: 13px; color: #5A544B; line-height: 1.6; padding-top: 3px; }
+  .t3 .j-txt b { color: #2D2A26; }
+  .t3 .results-head { padding: 4px 24px 12px; display: flex; justify-content: space-between; align-items: baseline; }
+  .t3 .results-title { color: #2D2A26; font-size: 18px; font-weight: 800; }
+  .t3 .results-count { color: #A39B8E; font-size: 12.5px; }
+  .t3 .card {
+    margin: 0 20px 12px; background: #FFF; border-radius: 22px; padding: 16px;
+    display: flex; gap: 13px; box-shadow: 0 2px 10px rgba(120,100,80,.07);
+  }
+  .t3 .card.hit { box-shadow: 0 0 0 2px #F4B8A2, 0 2px 10px rgba(120,100,80,.07); }
+  .t3 .thumb {
+    width: 58px; height: 58px; border-radius: 18px; background: #FBEAE3;
+    color: #E8643C; display: flex; align-items: center; justify-content: center;
+    font-size: 21px; font-weight: 800; flex-shrink: 0;
+  }
+  .t3 .c-body { flex: 1; min-width: 0; }
+  .t3 .c-title {
+    color: #2D2A26; font-size: 14.5px; line-height: 1.5; font-weight: 700;
+    margin-bottom: 7px; overflow: hidden; display: -webkit-box;
+    -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  }
+  .t3 .c-price { color: #E8643C; font-size: 20px; font-weight: 800; margin-bottom: 7px; }
+  .t3 .c-price small { font-size: 13px; }
+  .t3 .c-meta { display: flex; gap: 6px; flex-wrap: wrap; }
+  .t3 .chip {
+    font-size: 11px; color: #8C8478; background: #F5F0E8;
+    border-radius: 999px; padding: 3px 10px;
+  }
+  .t3 .chip.pref { color: #E8643C; background: #FBEAE3; font-weight: 700; }
+  .t3 .tabbar { display: flex; background: #FAF6F0; border-top: 1px solid #EFE8DE; }
+  .t3 .tab { flex: 1; text-align: center; padding: 15px 0 18px; font-size: 13px; color: #B0A89C; }
+  .t3 .tab.on { color: #E8643C; font-weight: 800; }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1>SmartCart 风格方向对比稿</h1>
+  <p>同一个搜索结果页（数据来自 2026-06-12 真机验收的真实商品），三种气质。
+     选定一个方向后，我会把它固化成完整的 design tokens 并落地到 React Native 的两个页面。
+     也可以混搭：例如「方向 1 的过程日志 + 方向 2 的商品卡」。</p>
+</div>
+
+<div class="compare">
+
+  <!-- ============ 方向 1：Agent 控制台 ============ -->
+  <div class="option t1">
+    <div class="phone">
+      <div class="screen">
+        <div class="statusbar"><span>09:07</span><span>5G · 100%</span></div>
+        <div class="appbar">
+          <span class="brand">SmartCart</span>
+          <span class="brand-tag">AGENT·ONLINE</span>
+        </div>
+        <div class="query-card">
+          <div class="query-label">SHOPPING REQUEST</div>
+          <div class="query-text">我想买500元左右的蓝牙耳机</div>
+          <div class="run-btn">▶ 执行搜索</div>
+        </div>
+        <div class="agent-log">
+          <div class="log-title"><span>AGENT TRACE</span><span>task#7918d2</span></div>
+          <div class="log-line"><span class="tick">✓</span><span class="step">解析需求 → 蓝牙耳机 · ¥400-600</span><span class="ms">1.8s</span></div>
+          <div class="log-line"><span class="tick">✓</span><span class="step">控制手机 · 打开淘宝并搜索</span><span class="ms">96s</span></div>
+          <div class="log-line"><span class="tick">✓</span><span class="step">截屏 → GLM-4V 提取 3 件商品</span><span class="ms">11s</span></div>
+          <div class="log-line"><span class="tick">✓</span><span class="step">按你的偏好重排序</span><span class="ms">0.1s</span></div>
+        </div>
+        <div class="results-head">
+          <span class="results-title">搜索结果</span>
+          <span class="results-count">3 items · real data</span>
+        </div>
+        <div class="card hit">
+          <div class="thumb">华</div>
+          <div class="c-body">
+            <div class="c-title">华为 FreeBuds 7i 智慧降噪蓝牙耳机</div>
+            <div class="c-price">¥443.01</div>
+            <div class="c-meta">
+              <span class="chip pref">★ 偏好命中</span>
+              <span class="chip">华为</span><span class="chip">销量 7万+</span>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="thumb">弱</div>
+          <div class="c-body">
+            <div class="c-title">[周传雄同款] 弱水时砂蓝牙耳机 高音质 57 小时续航</div>
+            <div class="c-price">¥343.82</div>
+            <div class="c-meta"><span class="chip">taobao</span><span class="chip">销量 6000+</span></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="thumb">弱</div>
+          <div class="c-body">
+            <div class="c-title">弱水时光翼耳夹耳机 2026 新款 运动不入耳</div>
+            <div class="c-price">¥131.97</div>
+            <div class="c-meta"><span class="chip">taobao</span><span class="chip">销量 3000+</span></div>
+          </div>
+        </div>
+        <div style="height:12px"></div>
+      </div>
+      <div class="tabbar"><div class="tab on">⌂ 首页</div><div class="tab">◎ 偏好</div></div>
+    </div>
+    <div class="opt-meta">
+      <div class="opt-name">方向 1 · Agent 控制台</div>
+      <div class="opt-desc">
+        深色工程美学，等宽字体点缀，Agent 执行过程像任务日志一样逐条展示（含真实耗时）。
+        最大化呈现"这是一个真的在干活的 Agent"，技术评审语境下辨识度最强。
+        参考气质：Raycast、GitHub Dark、终端工具。
+      </div>
+      <div class="swatches">
+        <div class="swatch" style="background:#0D1117"><span>#0D1117</span></div>
+        <div class="swatch" style="background:#161B22"><span>#161B22</span></div>
+        <div class="swatch" style="background:#3FB950"><span>#3FB950</span></div>
+        <div class="swatch" style="background:#58A6FF"><span>#58A6FF</span></div>
+        <div class="swatch" style="background:#E6EDF3"><span>#E6EDF3</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 方向 2：克制电商 ============ -->
+  <div class="option t2">
+    <div class="phone">
+      <div class="screen">
+        <div class="statusbar"><span>09:07</span><span>5G · 100%</span></div>
+        <div class="appbar">
+          <div class="brand">SmartCart</div>
+          <div class="brand-sub">说出需求，剩下的交给 Agent</div>
+        </div>
+        <div class="query-card">
+          <div class="query-input">我想买500元左右的蓝牙耳机</div>
+          <div class="run-btn">开始搜索</div>
+        </div>
+        <div class="stepper">
+          <div class="stp"><div class="dot">✓</div><div class="lbl">解析</div></div>
+          <div class="stp-line"></div>
+          <div class="stp"><div class="dot">✓</div><div class="lbl">操控手机</div></div>
+          <div class="stp-line"></div>
+          <div class="stp"><div class="dot">✓</div><div class="lbl">提取</div></div>
+          <div class="stp-line"></div>
+          <div class="stp"><div class="dot">✓</div><div class="lbl">排序</div></div>
+        </div>
+        <div class="results-head">
+          <span class="results-title">为你找到 3 件</span>
+          <span class="results-count">来自淘宝 · 真实数据</span>
+        </div>
+        <div class="sort-hint">已按你的偏好排序 — <b>华为</b> 排在最前，因为你点过它</div>
+        <div class="card">
+          <div class="thumb">华</div>
+          <div class="c-body">
+            <div class="c-title">华为 FreeBuds 7i 智慧降噪蓝牙耳机</div>
+            <div class="c-row">
+              <div class="c-price"><small>¥</small>443.01</div>
+              <div class="c-meta">华为 · 销量 7万+</div>
+            </div>
+            <span class="pref-tag">偏好命中 · 已学习</span>
+          </div>
+        </div>
+        <div class="card">
+          <div class="thumb">弱</div>
+          <div class="c-body">
+            <div class="c-title">[周传雄同款] 弱水时砂蓝牙耳机 高音质 57 小时续航</div>
+            <div class="c-row">
+              <div class="c-price"><small>¥</small>343.82</div>
+              <div class="c-meta">淘宝 · 销量 6000+</div>
+            </div>
+          </div>
+        </div>
+        <div class="card" style="border-bottom:none">
+          <div class="thumb">弱</div>
+          <div class="c-body">
+            <div class="c-title">弱水时光翼耳夹耳机 2026 新款 运动不入耳</div>
+            <div class="c-row">
+              <div class="c-price"><small>¥</small>131.97</div>
+              <div class="c-meta">淘宝 · 销量 3000+</div>
+            </div>
+          </div>
+        </div>
+        <div style="height:12px"></div>
+      </div>
+      <div class="tabbar"><div class="tab on">首页</div><div class="tab">偏好</div></div>
+    </div>
+    <div class="opt-meta">
+      <div class="opt-name">方向 2 · 克制电商</div>
+      <div class="opt-desc">
+        浅色大留白，黑白为骨、绿色只给"偏好命中"一处。没有多余装饰，
+        信息层级全靠字号与字重，价格与排序理由是主角（"华为排最前，因为你点过它"
+        ——把自进化机制写成一句人话）。参考气质：Notion、无印良品、得物的克制版。
+      </div>
+      <div class="swatches">
+        <div class="swatch" style="background:#FAFAF8"><span>#FAFAF8</span></div>
+        <div class="swatch" style="background:#111418"><span>#111418</span></div>
+        <div class="swatch" style="background:#878D96"><span>#878D96</span></div>
+        <div class="swatch" style="background:#0E7A4A"><span>#0E7A4A</span></div>
+        <div class="swatch" style="background:#ECECE8"><span>#ECECE8</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 方向 3：暖感助手 ============ -->
+  <div class="option t3">
+    <div class="phone">
+      <div class="screen">
+        <div class="statusbar"><span>09:07</span><span>5G · 100%</span></div>
+        <div class="appbar">
+          <div class="avatar">🛒</div>
+          <div>
+            <div class="brand">SmartCart</div>
+            <div class="brand-sub">你的购物小助手</div>
+          </div>
+        </div>
+        <div class="bubble">
+          我去淘宝帮你逛了一圈，找到 <b>3 件</b>不错的——
+          记得你喜欢<b>华为</b>，把它放在最前面了。
+        </div>
+        <div class="query-card">
+          <div class="query-input">我想买500元左右的蓝牙耳机</div>
+          <div class="run-btn">帮我去找 →</div>
+        </div>
+        <div class="journey">
+          <div class="journey-title">我刚刚做了什么</div>
+          <div class="j-step"><div class="j-ico">🧠</div><div class="j-txt">听懂了：<b>蓝牙耳机</b>，预算 <b>¥400-600</b></div></div>
+          <div class="j-step"><div class="j-ico">📱</div><div class="j-txt">替你打开淘宝搜了一遍</div></div>
+          <div class="j-step"><div class="j-ico">👀</div><div class="j-txt">看了一眼结果页，挑出 <b>3 件</b></div></div>
+          <div class="j-step"><div class="j-ico">💡</div><div class="j-txt">按你的口味排好了顺序</div></div>
+        </div>
+        <div class="results-head">
+          <span class="results-title">为你挑的</span>
+          <span class="results-count">真实商品 · 刚刚抓取</span>
+        </div>
+        <div class="card hit">
+          <div class="thumb">华</div>
+          <div class="c-body">
+            <div class="c-title">华为 FreeBuds 7i 智慧降噪蓝牙耳机</div>
+            <div class="c-price"><small>¥</small>443.01</div>
+            <div class="c-meta">
+              <span class="chip pref">❤ 你的菜</span>
+              <span class="chip">华为</span><span class="chip">7万+ 人买过</span>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="thumb">弱</div>
+          <div class="c-body">
+            <div class="c-title">[周传雄同款] 弱水时砂蓝牙耳机 高音质 57 小时续航</div>
+            <div class="c-price"><small>¥</small>343.82</div>
+            <div class="c-meta"><span class="chip">淘宝</span><span class="chip">6000+ 人买过</span></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="thumb">弱</div>
+          <div class="c-body">
+            <div class="c-title">弱水时光翼耳夹耳机 2026 新款 运动不入耳</div>
+            <div class="c-price"><small>¥</small>131.97</div>
+            <div class="c-meta"><span class="chip">淘宝</span><span class="chip">3000+ 人买过</span></div>
+          </div>
+        </div>
+        <div style="height:12px"></div>
+      </div>
+      <div class="tabbar"><div class="tab on">🏠 首页</div><div class="tab">🎯 偏好</div></div>
+    </div>
+    <div class="opt-meta">
+      <div class="opt-name">方向 3 · 暖感助手</div>
+      <div class="opt-desc">
+        暖白底 + 珊瑚橙，大圆角与软阴影，Agent 过程用第一人称讲故事
+        （"我去淘宝帮你逛了一圈"），偏好命中叫"你的菜"。
+        消费者产品的亲和力路线，演示视频里最有"产品感"。
+        参考气质：豆包、Airbnb、多邻国。
+      </div>
+      <div class="swatches">
+        <div class="swatch" style="background:#FAF6F0"><span>#FAF6F0</span></div>
+        <div class="swatch" style="background:#FFFFFF"><span>#FFFFFF</span></div>
+        <div class="swatch" style="background:#E8643C"><span>#E8643C</span></div>
+        <div class="swatch" style="background:#FBEAE3"><span>#FBEAE3</span></div>
+        <div class="swatch" style="background:#2D2A26"><span>#2D2A26</span></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
