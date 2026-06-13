@@ -153,6 +153,10 @@ class TaobaoSearchSkill:
             if result.returncode != 0:
                 raise Exception(f"搜索失败: {result.stderr}")
 
+            # Agent 执行时长波动大（1-5 分钟），保留尾部输出便于诊断
+            if result.stdout:
+                print(f"AutoGLM done, output tail: ...{result.stdout[-200:]}")
+
             # 手机已停留在搜索结果页，由后端主动截屏
             # （Open-AutoGLM 不持久化截图，必须自行截取）
             screenshot_path = self._capture_screenshot()
