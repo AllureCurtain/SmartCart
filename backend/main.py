@@ -18,6 +18,7 @@ from services.preference_service import PreferenceService
 from services.memory_context import MemoryContextService
 from services.task_store import TaskStore, is_valid_task_id
 from services.agent_runtime import AgentRuntime
+from services.device_pool import device_pool
 from skills.taobao_search import TaobaoSearchSkill, JDSearchSkill
 from skills.catalog import build_registry
 from datetime import datetime
@@ -195,6 +196,20 @@ async def record_user_action(action: UserAction):
 async def list_skills():
     """列出已注册技能（同时也是 MCP 暴露的工具），体现 Skill 机制。"""
     return APIResponse(success=True, data={"skills": registry.descriptions()})
+
+
+@app.get("/api/system/concurrency", response_model=APIResponse)
+async def concurrency_status():
+    """并发与设备占用指标：体现"并发编排 + 串行设备资源池"。
+
+    device_pool.in_use/waiting 反映多用户/多源争用同一部手机时的排队；
+    扩容设备（capacity）或改用平台 API 数据源即可获得真并行。
+    """
+    return APIResponse(success=True, data={
+        "device_pool": device_pool.stats(),
+        "tasks": {"processing": task_store.count_processing()},
+        "note": "单手机=容量1：真机源在池上串行排队；编排层并发，扩容设备或改用平台 API 源即真并行",
+    })
 
 
 @app.get("/health")
