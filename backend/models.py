@@ -30,6 +30,7 @@ class SearchRequest(BaseModel):
     """搜索请求"""
     query: str = Field(..., min_length=1, max_length=100)  # 用户输入的自然语言
     user_id: str = Field("default", max_length=64)  # 用户 ID
+    platform: str = Field("taobao", pattern="^(taobao|jd)$")  # 搜索平台：taobao | jd
 
 
 class ParsedQuery(BaseModel):

@@ -18,7 +18,7 @@ from services.preference_service import PreferenceService
 from services.memory_context import MemoryContextService
 from services.task_store import TaskStore, is_valid_task_id
 from services.agent_runtime import AgentRuntime
-from skills.taobao_search import TaobaoSearchSkill
+from skills.taobao_search import TaobaoSearchSkill, JDSearchSkill
 from skills.catalog import build_registry
 from datetime import datetime
 import uuid
@@ -47,7 +47,8 @@ preference_service = PreferenceService()
 task_store = TaskStore()
 memory_service = MemoryContextService(preference_service)
 taobao_skill = TaobaoSearchSkill()
-registry = build_registry(taobao_skill, preference_service, task_store, memory_service)
+jd_skill = JDSearchSkill()
+registry = build_registry(taobao_skill, preference_service, task_store, memory_service, jd_skill=jd_skill)
 agent = AgentRuntime(query_parser, memory_service, registry)
 
 
@@ -61,6 +62,7 @@ def execute_search_task(task_id: str, request: SearchRequest):
             user_id=request.user_id,
             max_products=10,
             on_progress=lambda stage: task_store.update(task_id, progress=stage),
+            platform=request.platform,
         )
         task_store.write(SearchResult(
             task_id=task_id,

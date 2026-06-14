@@ -44,6 +44,7 @@ class AgentRuntime:
         user_id: str = "default",
         max_products: int = 10,
         on_progress: Optional[Callable[[str], None]] = None,
+        platform: str = "taobao",
     ) -> AgentSearchOutcome:
         notify = on_progress or (lambda stage: None)
         trace: List[str] = []
@@ -70,13 +71,14 @@ class AgentRuntime:
         else:
             trace.append(f"搜索词 → {effective_query}")
 
-        # 4. 调用工具（真机搜索；进度由内部回调透传）
+        # 4. 调用工具（真机搜索；platform 决定调淘宝还是京东，进度由内部回调透传）
         notify("controlling_phone")
+        tool_name = f"{platform}_search"
         product_dicts: List[Dict[str, Any]] = self.registry.invoke(
-            "taobao_search", keyword=effective_query,
+            tool_name, keyword=effective_query,
             max_products=max_products, on_progress=notify,
         )
-        trace.append(f"调用工具 → taobao_search（{len(product_dicts)} 个商品）")
+        trace.append(f"调用工具 → {tool_name}（{len(product_dicts)} 个商品）")
 
         # 5. 重排 + 推荐理由
         notify("ranking")
