@@ -9,19 +9,33 @@
 SmartCart 让用户用一句自然语言描述购物需求，例如“我想买 500 元左右的蓝牙耳机”，由 Agent 自动完成：
 
 1. **需求理解**：GLM 解析自然语言，提取品类、预算和特性偏好。
-2. **自动化搜索**：Open-AutoGLM 通过 ADB 控制 Android 手机打开淘宝并搜索。
-3. **商品提取**：后端主动截取淘宝结果页，调用 GLM-4V 解析截图并输出结构化商品。
-4. **Memory 学习**：记录搜索历史和商品点击行为，学习品牌、价格和特性偏好。
-5. **自进化推荐**：基于偏好权重对后续搜索结果重排序。
+2. **读取记忆**：从 Memory 取出用户偏好（常看品牌 / 价格区间 / 特性）。
+3. **调整搜索**：把记忆保守地注入搜索词（用户意图永远优先），并在 AGENT TRACE 中说明。
+4. **自动化搜索**：Open-AutoGLM 通过 ADB 控制 Android 手机打开淘宝并搜索。
+5. **商品提取**：后端主动截取淘宝结果页，调用 GLM-4V 解析截图并输出结构化商品。
+6. **推荐重排**：用记忆 + 当前意图给商品打分并给出一句推荐理由。
+7. **记忆更新**：点击商品写回 Memory，下一次相似搜索可见地用上记忆。
+
+### Agent 架构（对应岗位四项能力）
+
+| 能力 | 实现 |
+|------|------|
+| **Memory 记忆机制** | `PreferenceService` 持久化品牌/价格/特性偏好与搜索历史；`MemoryContextService` 产出紧凑记忆上下文 |
+| **Skill 机制** | `Skill` 抽象基类 + `SkillRegistry` 注册表；4 个声明式技能（`taobao_search` / `get_preference_insight` / `record_product_action` / `rerank_products`），`GET /api/skills` 可查 |
+| **MCP 工具** | `mcp_server.py` 把同一套技能以 MCP 工具形式暴露（stdio），任意 MCP 客户端（如 Claude Desktop）可驱动 |
+| **自进化机制** | 搜索前记忆注入有效查询 + 搜索后记忆驱动重排，并把"为什么这么搜/这么排"写进可见的 AGENT TRACE 与推荐理由 |
+
+`AgentRuntime` 作为编排层把上述能力串联，FastAPI 与 MCP 共享同一个 `SkillRegistry`。
 
 ## 当前状态
 
 **已完成并验收：**
 
-- FastAPI 后端：搜索任务创建、任务查询、最近结果恢复、偏好查询、行为上报 API。
+- Agent 架构：`AgentRuntime` 编排 + `SkillRegistry` 技能注册表 + `MCP Server` + 记忆驱动自进化，后端 61 项单测全绿。
+- FastAPI 后端：搜索任务创建、任务查询、最近结果恢复、偏好查询、行为上报、技能列表 API。
 - 淘宝搜索 Skill：封装 Open-AutoGLM，支持真机控制、ADB 截屏、GLM-4V 商品提取。
-- React Native App：Expo Go 真机运行、搜索页、真实进度、结果页、偏好页，含加载骨架、空状态和商品缩略占位。
-- Memory 闭环：App 点击商品后写入偏好，后续搜索按偏好重排。
+- React Native App：Expo Go 真机运行，AGENT TRACE 展示真实执行轨迹，商品卡片含推荐理由、加载骨架、空状态。
+- Memory 闭环 + 自进化：App 点击商品写入偏好，下一次相似搜索可见地注入记忆并重排。
 - 单机演示稳定性：同一台手机既运行 Expo Go 又被 AutoGLM 切到淘宝时，App 可恢复最近搜索结果。
 
 **2026-06-12 真机验收记录：**
@@ -35,20 +49,23 @@ SmartCart 让用户用一句自然语言描述购物需求，例如“我想买 
 ## 系统架构
 
 ```text
-React Native App (Expo Go)
-        │ REST API
-        ▼
-FastAPI 后端
-  ├─ QueryParserService      自然语言需求解析
-  ├─ TaobaoSearchSkill       Skill 机制：淘宝搜索自动化
-  ├─ PreferenceService       Memory 与推荐权重
-  └─ latest result API       真机演示结果恢复
-        │ subprocess + ADB
-        ▼
-Open-AutoGLM ──► Android 手机（淘宝 App）
-        │
-        ▼
-ADB 截屏 ──► GLM-4V 商品结构化提取
+React Native App (Expo Go)            MCP 客户端（如 Claude Desktop）
+        │ REST API                              │ MCP (stdio)
+        ▼                                       ▼
+FastAPI 端点 ──────► AgentRuntime          mcp_server.py
+                         │                      │
+                         ▼                      ▼
+                    SkillRegistry ◄─────────────┘   （FastAPI 与 MCP 共享同一套技能）
+                         ├─ taobao_search          → Open-AutoGLM + ADB 截屏 + GLM-4V 提取
+                         ├─ get_preference_insight → MemoryContextService
+                         ├─ record_product_action  → PreferenceService（Memory）
+                         └─ rerank_products        → 记忆驱动打分 + 推荐理由
+                         │
+                         ▼
+            SearchResult + AgentTrace + 推荐理由
+                         │ subprocess + ADB
+                         ▼
+            Open-AutoGLM ──► Android 手机（淘宝 App）
 ```
 
 ## 技术栈
@@ -108,6 +125,33 @@ cd SmartCart/backend
 pip install -r requirements.txt
 uvicorn main:app --host 0.0.0.0 --port 8000
 ```
+
+可选验证：`GET /api/skills` 列出已注册技能；`pytest` 跑后端单测。
+
+### 2b.（可选）启动 MCP Server
+
+把 SmartCart 的技能以 MCP 工具暴露给任意 MCP 客户端（stdio 传输）：
+
+```bash
+cd SmartCart/backend
+python mcp_server.py
+```
+
+接入 Claude Desktop 时，在其 MCP 配置中加入：
+
+```json
+{
+  "mcpServers": {
+    "smartcart": {
+      "command": "python",
+      "args": ["D:/Study/project/SmartCart/backend/mcp_server.py"]
+    }
+  }
+}
+```
+
+连上后即可在客户端直接调用 `taobao_search` / `get_preference_insight` /
+`record_product_action` / `rerank_products` 四个工具。
 
 ### 3. 启动移动端
 
