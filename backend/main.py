@@ -76,6 +76,7 @@ def execute_search_task(task_id: str, request: SearchRequest):
             agent_trace=outcome.agent_trace,
             memory_context=outcome.memory_context,
             effective_query=outcome.effective_query,
+            elapsed_seconds=outcome.elapsed_seconds,
             created_at=datetime.now(),
         ))
     except Exception as e:

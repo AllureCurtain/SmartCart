@@ -24,6 +24,7 @@ const API_BASE_URL = resolveBaseUrl();
 export interface SearchRequest {
   query: string;
   user_id?: string;
+  platform?: string;
 }
 
 export interface Product {
@@ -58,6 +59,7 @@ export interface SearchResult {
   is_demo?: boolean;
   agent_trace?: string[];
   effective_query?: string;
+  elapsed_seconds?: number;
   memory_context?: MemoryContext;
 }
 
@@ -82,11 +84,13 @@ class ApiService {
    * 创建搜索任务
    */
   async createSearch(
-    query: string
+    query: string,
+    platform: string = 'taobao'
   ): Promise<{ task_id: string; status: string }> {
     const response = await axios.post(`${API_BASE_URL}/api/search`, {
       query,
       user_id: 'default',
+      platform,
     });
     return response.data.data;
   }

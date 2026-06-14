@@ -56,6 +56,7 @@ class SearchResult(BaseModel):
     agent_trace: List[str] = Field(default_factory=list)  # Agent 可见执行轨迹
     memory_context: Dict[str, Any] = Field(default_factory=dict)  # 本次使用的记忆上下文
     effective_query: Optional[str] = None  # 实际输入淘宝的搜索词
+    elapsed_seconds: Optional[float] = None  # Agent 端到端总耗时（秒），前端展示在轨迹头部
     created_at: datetime  # 创建时间
 
 
