@@ -20,6 +20,8 @@ const STAGES = [
   { key: 'ranking', label: '按你的偏好重排序' },
 ] as const;
 
+const PLATFORM_LABELS = { all: '综合', taobao: '淘宝', jd: '京东' } as const;
+
 type StatusTone = 'info' | 'success' | 'warning' | 'error';
 
 function formatPrice(price: number): string {
@@ -46,7 +48,7 @@ export default function HomeScreen() {
   // 后端返回的真实 Agent 执行轨迹（完成后填充，作为 AGENT TRACE 主体）
   const [agentTrace, setAgentTrace] = useState<string[]>([]);
   // 搜索平台（淘宝/京东）：证明 Skill 机制是多数据源可复用的，而非只绑淘宝
-  const [platform, setPlatform] = useState<'taobao' | 'jd'>('taobao');
+  const [platform, setPlatform] = useState<'all' | 'taobao' | 'jd'>('all');
   // 后端返回的端到端总耗时（秒），展示在 AGENT TRACE 头部（替代无意义的 task#id）
   const [elapsedSeconds, setElapsedSeconds] = useState<number | null>(null);
 
@@ -201,6 +203,13 @@ export default function HomeScreen() {
     error: styles.termMsgError,
   }[statusTone];
 
+  // 结果来源标签：多平台 → 多源综合；单平台 → 来自某平台
+  const resultPlatforms = Array.from(new Set(products.map((p) => p.platform)));
+  const sourceLabel =
+    resultPlatforms.length > 1
+      ? `多源综合（${resultPlatforms.map((p) => (p === 'jd' ? '京东' : '淘宝')).join('+')}）`
+      : `来自${resultPlatforms[0] === 'jd' ? '京东' : '淘宝'}`;
+
   return (
     <ScrollView
       style={styles.container}
@@ -221,7 +230,7 @@ export default function HomeScreen() {
           multiline
         />
         <View style={styles.platformRow}>
-          {(['taobao', 'jd'] as const).map((p) => (
+          {(['all', 'taobao', 'jd'] as const).map((p) => (
             <TouchableOpacity
               key={p}
               style={[styles.platformPill, platform === p && styles.platformPillActive]}
@@ -235,7 +244,7 @@ export default function HomeScreen() {
                   platform === p && styles.platformPillTextActive,
                 ]}
               >
-                {p === 'taobao' ? '淘宝' : '京东'}
+                {PLATFORM_LABELS[p]}
               </Text>
             </TouchableOpacity>
           ))}
@@ -318,9 +327,7 @@ export default function HomeScreen() {
           <View style={styles.resultsHeader}>
             <Text style={styles.resultsTitle}>为你找到 {products.length} 件</Text>
             <Text style={styles.resultsCount}>
-              {isDemo
-                ? '演示数据'
-                : `来自${products[0]?.platform === 'jd' ? '京东' : '淘宝'} · 真实数据`}
+              {isDemo ? '演示数据' : `${sourceLabel} · 真实数据`}
             </Text>
           </View>
           {!isDemo && (
@@ -371,6 +378,11 @@ export default function HomeScreen() {
                   </Text>
                 ) : null}
                 <View style={styles.tagRow}>
+                  {!product.is_demo && product.deal_tag ? (
+                    <View style={styles.dealTag}>
+                      <Text style={styles.dealTagText}>{product.deal_tag}</Text>
+                    </View>
+                  ) : null}
                   {clickedIds.includes(product.id) && (
                     <View style={styles.prefTag}>
                       <Text style={styles.prefTagText}>偏好命中 · 已学习</Text>
@@ -712,6 +724,18 @@ const styles = StyleSheet.create({
   demoTagText: {
     fontSize: fontSize.micro - 1,
     color: colors.warnFg,
+    fontWeight: '700',
+  },
+  dealTag: {
+    backgroundColor: colors.ink,
+    borderRadius: radius.sm - 2,
+    paddingHorizontal: spacing.s + 1,
+    paddingVertical: 3,
+    marginRight: spacing.xs + 2,
+  },
+  dealTagText: {
+    fontSize: fontSize.micro - 1,
+    color: colors.accentOn,
     fontWeight: '700',
   },
 });

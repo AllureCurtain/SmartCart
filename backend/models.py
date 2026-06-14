@@ -24,13 +24,14 @@ class Product(BaseModel):
     is_demo: bool = False  # 是否为演示数据（降级/模拟时必须标记）
     recommendation_score: float = 0.0  # 推荐分数（Memory / 当前需求综合）
     recommendation_reason: Optional[str] = None  # 推荐理由，前端展示一行
+    deal_tag: Optional[str] = None  # 跨平台比价标签（如"全网最低价"），多源时由编排层标注
 
 
 class SearchRequest(BaseModel):
     """搜索请求"""
     query: str = Field(..., min_length=1, max_length=100)  # 用户输入的自然语言
     user_id: str = Field("default", max_length=64)  # 用户 ID
-    platform: str = Field("taobao", pattern="^(taobao|jd)$")  # 搜索平台：taobao | jd
+    platform: str = Field("all", pattern="^(all|taobao|jd)$")  # 搜索平台：all（多源综合）| taobao | jd
 
 
 class ParsedQuery(BaseModel):

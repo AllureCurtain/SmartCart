@@ -38,6 +38,7 @@ export interface Product {
   is_demo?: boolean;
   recommendation_score?: number;
   recommendation_reason?: string | null;
+  deal_tag?: string | null;
 }
 
 export interface MemoryContext {

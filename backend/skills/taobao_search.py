@@ -9,7 +9,6 @@ import os
 import re
 import sys
 import subprocess
-import threading
 import uuid
 import base64
 import json
@@ -25,6 +24,7 @@ logger = logging.getLogger(__name__)
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from models import Product
 from config import ZHIPU_API_KEY, ZHIPU_BASE_URL, ZHIPU_MODEL, ZHIPU_VISION_MODEL, ADB_PATH
+from services.device_pool import device_pool
 
 # 添加 Open-AutoGLM 到路径
 AUTOGLM_PATH = Path(__file__).parent.parent.parent.parent / "Open-AutoGLM"
@@ -32,9 +32,8 @@ AUTOGLM_PATH = Path(__file__).parent.parent.parent.parent / "Open-AutoGLM"
 # 截图保存目录（data/ 已 gitignore）
 SCREENSHOT_DIR = Path(__file__).parent.parent / "data" / "screenshots"
 
-# 单台手机只能串行操作，真机搜索加全局锁防止并发任务互相截到对方的屏幕
-_DEVICE_LOCK = threading.Lock()
-
+# 单台手机只能串行操作；真机访问统一走 device_pool（容量=手机数），
+# 把并发任务在设备层显式排队，而不是隐式互相截屏。
 # 关键词最长 30 字符：足够覆盖商品类目词，同时压缩提示词注入空间
 MAX_KEYWORD_LENGTH = 30
 
@@ -154,7 +153,8 @@ class PhoneSearchSkill:
         env['PATH'] = self.adb_path + os.pathsep + env.get('PATH', '')
         env['PYTHONIOENCODING'] = 'utf-8'
 
-        with _DEVICE_LOCK:
+        notify("waiting_device")
+        with device_pool.acquire():
             notify("controlling_phone")
             try:
                 # 执行 Open-AutoGLM

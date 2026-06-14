@@ -100,3 +100,12 @@ class TaskStore:
             if data.get("status") == "completed":
                 return data
         return None
+
+    def count_processing(self) -> int:
+        """在飞（status=processing）任务数，供并发指标展示。"""
+        n = 0
+        for task_file in self.root.glob("*.json"):
+            data = self._read_file(task_file)
+            if data is not None and data.get("status") == "processing":
+                n += 1
+        return n
