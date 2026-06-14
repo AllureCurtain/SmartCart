@@ -11,23 +11,24 @@ from services.preference_service import PreferenceService
 from services.memory_context import MemoryContextService
 from services.task_store import TaskStore
 from skills.base import Skill
-from skills.taobao_search import TaobaoSearchSkill
+from skills.taobao_search import PhoneSearchSkill
 
 
-class TaobaoSearchTool(Skill):
-    name = "taobao_search"
-    description = "通过 Open-AutoGLM 控制真机在淘宝搜索商品，截屏后用 GLM-4V 提取结构化商品"
-    parameters = {
-        "type": "object",
-        "properties": {
-            "keyword": {"type": "string", "description": "商品搜索关键词"},
-            "max_products": {"type": "integer", "description": "最多返回商品数", "default": 10},
-        },
-        "required": ["keyword"],
-    }
+class PlatformSearchTool(Skill):
+    """把某个平台的真机搜索技能包装成注册式 Skill（淘宝/京东共用同一个适配器）。"""
 
-    def __init__(self, taobao_skill: TaobaoSearchSkill):
-        self._skill = taobao_skill
+    def __init__(self, name: str, description: str, search_skill: PhoneSearchSkill):
+        self.name = name
+        self.description = description
+        self.parameters = {
+            "type": "object",
+            "properties": {
+                "keyword": {"type": "string", "description": "商品搜索关键词"},
+                "max_products": {"type": "integer", "description": "最多返回商品数", "default": 10},
+            },
+            "required": ["keyword"],
+        }
+        self._skill = search_skill
 
     def run(self, keyword: str, max_products: int = 10, on_progress=None, **_: Any) -> List[Dict[str, Any]]:
         products = self._skill.search(keyword, max_products=max_products, on_progress=on_progress)
@@ -128,17 +129,27 @@ class RerankProductsTool(Skill):
         return [p.model_dump() for p in ranked]
 
 
+_TAOBAO_DESC = "通过 Open-AutoGLM 控制真机在淘宝搜索商品，截屏后用 GLM-4V 提取结构化商品"
+_JD_DESC = "通过 Open-AutoGLM 控制真机在京东搜索商品，截屏后用 GLM-4V 提取结构化商品"
+
+
 def build_registry(
-    taobao_skill: TaobaoSearchSkill,
+    taobao_skill: PhoneSearchSkill,
     preference_service: PreferenceService,
     task_store: TaskStore,
     memory_service: MemoryContextService,
+    jd_skill: Optional[PhoneSearchSkill] = None,
 ):
-    """组装并返回包含全部技能的注册表。"""
+    """组装并返回包含全部技能的注册表。
+
+    jd_skill 可选：传入即额外暴露 jd_search，使注册表 / MCP 拥有淘宝+京东两个数据源。
+    """
     from skills.registry import SkillRegistry
 
     registry = SkillRegistry()
-    registry.register(TaobaoSearchTool(taobao_skill))
+    registry.register(PlatformSearchTool("taobao_search", _TAOBAO_DESC, taobao_skill))
+    if jd_skill is not None:
+        registry.register(PlatformSearchTool("jd_search", _JD_DESC, jd_skill))
     registry.register(PreferenceInsightTool(memory_service))
     registry.register(RecordActionTool(preference_service, task_store, memory_service))
     registry.register(RerankProductsTool(memory_service))

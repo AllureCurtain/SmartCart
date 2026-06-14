@@ -15,7 +15,7 @@ import { colors, fontSize, fontFamily, spacing, radius } from '../theme/tokens';
 // 处理中阶段骨架（与后端 progress 字段对应）；完成后改用后端真实 agent_trace
 const STAGES = [
   { key: 'queued', label: '解析需求，创建搜索任务' },
-  { key: 'controlling_phone', label: '控制手机 · 打开淘宝搜索' },
+  { key: 'controlling_phone', label: '控制手机 · 打开购物 App 搜索' },
   { key: 'extracting', label: '截屏 → GLM-4V 提取商品' },
   { key: 'ranking', label: '按你的偏好重排序' },
 ] as const;
@@ -45,6 +45,10 @@ export default function HomeScreen() {
   const [stage, setStage] = useState('');
   // 后端返回的真实 Agent 执行轨迹（完成后填充，作为 AGENT TRACE 主体）
   const [agentTrace, setAgentTrace] = useState<string[]>([]);
+  // 搜索平台（淘宝/京东）：证明 Skill 机制是多数据源可复用的，而非只绑淘宝
+  const [platform, setPlatform] = useState<'taobao' | 'jd'>('taobao');
+  // 后端返回的端到端总耗时（秒），展示在 AGENT TRACE 头部（替代无意义的 task#id）
+  const [elapsedSeconds, setElapsedSeconds] = useState<number | null>(null);
 
   useEffect(() => {
     ApiService.getLatestSearchResult('default')
@@ -58,6 +62,7 @@ export default function HomeScreen() {
         setQuery(result.query || '');
         setStage('done');
         setAgentTrace(result.agent_trace || []);
+        setElapsedSeconds(result.elapsed_seconds ?? null);
         setStatusTone(result.is_demo ? 'warning' : 'success');
         setSearchStatus(
           `已恢复最近搜索结果，找到 ${result.products?.length || 0} 个商品`
@@ -100,12 +105,13 @@ export default function HomeScreen() {
     setHasSubmittedSearch(true);
     setStage('queued');
     setAgentTrace([]);
+    setElapsedSeconds(null);
     setStatusTone('info');
     setSearchStatus('正在创建搜索任务...');
 
     try {
       // 1. 创建搜索任务（解析/搜索/重排在后台执行）
-      const { task_id } = await ApiService.createSearch(query);
+      const { task_id } = await ApiService.createSearch(query, platform);
       setTaskId(task_id);
       setSearchStatus('任务已创建，等待执行');
 
@@ -144,6 +150,7 @@ export default function HomeScreen() {
           setIsDemo(!!result.is_demo);
           setStage('done');
           setAgentTrace(result.agent_trace || []);
+          setElapsedSeconds(result.elapsed_seconds ?? null);
           setStatusTone(result.is_demo ? 'warning' : 'success');
           setSearchStatus(`搜索完成，找到 ${result.products?.length || 0} 个商品`);
           setLoading(false);
@@ -213,6 +220,26 @@ export default function HomeScreen() {
           onChangeText={setQuery}
           multiline
         />
+        <View style={styles.platformRow}>
+          {(['taobao', 'jd'] as const).map((p) => (
+            <TouchableOpacity
+              key={p}
+              style={[styles.platformPill, platform === p && styles.platformPillActive]}
+              onPress={() => setPlatform(p)}
+              disabled={loading}
+              activeOpacity={0.7}
+            >
+              <Text
+                style={[
+                  styles.platformPillText,
+                  platform === p && styles.platformPillTextActive,
+                ]}
+              >
+                {p === 'taobao' ? '淘宝' : '京东'}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
         <TouchableOpacity
           style={[styles.button, loading && styles.buttonDisabled]}
           onPress={handleSearch}
@@ -228,8 +255,8 @@ export default function HomeScreen() {
         <View style={styles.terminal}>
           <View style={styles.termHeader}>
             <Text style={styles.termTitle}>AGENT TRACE</Text>
-            {taskId ? (
-              <Text style={styles.termTaskId}>task#{taskId.slice(0, 8)}</Text>
+            {elapsedSeconds != null ? (
+              <Text style={styles.termTaskId}>⏱ {elapsedSeconds.toFixed(1)}s</Text>
             ) : null}
           </View>
           {agentTrace.length > 0
@@ -291,7 +318,9 @@ export default function HomeScreen() {
           <View style={styles.resultsHeader}>
             <Text style={styles.resultsTitle}>为你找到 {products.length} 件</Text>
             <Text style={styles.resultsCount}>
-              {isDemo ? '演示数据' : '来自淘宝 · 真实数据'}
+              {isDemo
+                ? '演示数据'
+                : `来自${products[0]?.platform === 'jd' ? '京东' : '淘宝'} · 真实数据`}
             </Text>
           </View>
           {!isDemo && (
@@ -416,6 +445,31 @@ const styles = StyleSheet.create({
     fontSize: fontSize.body - 0.5,
     fontWeight: '700',
     letterSpacing: 2,
+  },
+  platformRow: {
+    flexDirection: 'row',
+    marginTop: spacing.m,
+  },
+  platformPill: {
+    paddingHorizontal: spacing.l,
+    paddingVertical: spacing.s,
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    marginRight: spacing.s,
+  },
+  platformPillActive: {
+    backgroundColor: colors.ink,
+    borderColor: colors.ink,
+  },
+  platformPillText: {
+    fontSize: fontSize.label,
+    color: colors.sub,
+    fontWeight: '600',
+  },
+  platformPillTextActive: {
+    color: colors.accentOn,
   },
   terminal: {
     marginHorizontal: spacing.xl,

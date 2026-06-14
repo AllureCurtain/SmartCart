@@ -65,7 +65,7 @@ def create_server(registry: SkillRegistry) -> Server:
 def build_default_registry() -> SkillRegistry:
     """用真实服务组装注册表（供 stdio 入口使用；需要 .env 配置）。"""
     from skills.catalog import build_registry
-    from skills.taobao_search import TaobaoSearchSkill
+    from skills.taobao_search import TaobaoSearchSkill, JDSearchSkill
     from services.preference_service import PreferenceService
     from services.memory_context import MemoryContextService
     from services.task_store import TaskStore
@@ -73,7 +73,8 @@ def build_default_registry() -> SkillRegistry:
     preference_service = PreferenceService()
     task_store = TaskStore()
     memory_service = MemoryContextService(preference_service)
-    return build_registry(TaobaoSearchSkill(), preference_service, task_store, memory_service)
+    return build_registry(TaobaoSearchSkill(), preference_service, task_store,
+                          memory_service, jd_skill=JDSearchSkill())
 
 
 async def run_stdio() -> None:
