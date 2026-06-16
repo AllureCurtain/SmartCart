@@ -10,7 +10,7 @@ import {
   Alert,
 } from 'react-native';
 import ApiService, { Product } from '../services/api';
-import { colors, fontSize, fontFamily, spacing, radius } from '../theme/tokens';
+import { colors, fontSize, fontFamily, fontVariant, spacing, radius } from '../theme/tokens';
 
 // 处理中阶段骨架（与后端 progress 字段对应）；完成后改用后端真实 agent_trace
 const STAGES = [
@@ -53,26 +53,38 @@ export default function HomeScreen() {
   const [elapsedSeconds, setElapsedSeconds] = useState<number | null>(null);
 
   useEffect(() => {
-    ApiService.getLatestSearchResult('default')
-      .then((result) => {
-        if (!result || result.status !== 'completed') {
-          return;
-        }
-        setTaskId(result.task_id);
-        setProducts(result.products || []);
-        setIsDemo(!!result.is_demo);
-        setQuery(result.query || '');
-        setStage('done');
-        setAgentTrace(result.agent_trace || []);
-        setElapsedSeconds(result.elapsed_seconds ?? null);
-        setStatusTone(result.is_demo ? 'warning' : 'success');
-        setSearchStatus(
-          `已恢复最近搜索结果，找到 ${result.products?.length || 0} 个商品`
-        );
-      })
-      .catch(() => {
-        // 恢复最近结果是辅助能力，失败不影响新搜索。
-      });
+    // 恢复最近结果是辅助能力，失败不影响新搜索；但 Expo Go 被 AutoGLM
+    // 切后台后经 deep-link 重载时，首次请求可能撞上隧道/重连的瞬态窗口而
+    // 失败——给它两次延迟重试，避免刚搜到的结果因重载显示成空首页。
+    let cancelled = false;
+    const tryRestore = (attempt: number) => {
+      ApiService.getLatestSearchResult('default')
+        .then((result) => {
+          if (cancelled) return;
+          if (!result || result.status !== 'completed') {
+            return;
+          }
+          setTaskId(result.task_id);
+          setProducts(result.products || []);
+          setIsDemo(!!result.is_demo);
+          setQuery(result.query || '');
+          setStage('done');
+          setAgentTrace(result.agent_trace || []);
+          setElapsedSeconds(result.elapsed_seconds ?? null);
+          setStatusTone(result.is_demo ? 'warning' : 'success');
+          setSearchStatus(
+            `已恢复最近搜索结果，找到 ${result.products?.length || 0} 个商品`
+          );
+        })
+        .catch(() => {
+          if (cancelled || attempt >= 2) return;
+          setTimeout(() => tryRestore(attempt + 1), 1500);
+        });
+    };
+    tryRestore(0);
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const handleProductClick = (product: Product) => {
@@ -214,6 +226,8 @@ export default function HomeScreen() {
     <ScrollView
       style={styles.container}
       contentContainerStyle={styles.contentContainer}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
     >
       <View style={styles.header}>
         <Text style={styles.title}>SmartCart</Text>
@@ -228,6 +242,7 @@ export default function HomeScreen() {
           value={query}
           onChangeText={setQuery}
           multiline
+          accessibilityLabel="搜索输入框"
         />
         <View style={styles.platformRow}>
           {(['all', 'taobao', 'jd'] as const).map((p) => (
@@ -237,6 +252,9 @@ export default function HomeScreen() {
               onPress={() => setPlatform(p)}
               disabled={loading}
               activeOpacity={0.7}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: platform === p }}
+              accessibilityLabel={`搜索平台：${PLATFORM_LABELS[p]}`}
             >
               <Text
                 style={[
@@ -253,6 +271,9 @@ export default function HomeScreen() {
           style={[styles.button, loading && styles.buttonDisabled]}
           onPress={handleSearch}
           disabled={loading}
+          accessibilityRole="button"
+          accessibilityLabel={loading ? '搜索中，请稍候' : '开始搜索'}
+          accessibilityState={{ disabled: loading }}
         >
           <Text style={styles.buttonText}>
             {loading ? '搜索中' : '开始搜索'}
@@ -261,7 +282,10 @@ export default function HomeScreen() {
       </View>
 
       {searchStatus ? (
-        <View style={styles.terminal}>
+        <View
+          style={styles.terminal}
+          accessibilityLabel={`Agent 执行轨迹，当前状态：${searchStatus}`}
+        >
           <View style={styles.termHeader}>
             <Text style={styles.termTitle}>AGENT TRACE</Text>
             {elapsedSeconds != null ? (
@@ -292,7 +316,11 @@ export default function HomeScreen() {
               {searchStatus}
             </Text>
             {loading && (
-              <ActivityIndicator size="small" color={colors.termAmber} />
+              <ActivityIndicator
+                size="small"
+                color={colors.termAmber}
+                accessibilityLabel="处理中"
+              />
             )}
           </View>
         </View>
@@ -317,8 +345,11 @@ export default function HomeScreen() {
         products.length === 0 &&
         statusTone === 'success' && (
           <View style={styles.emptyState}>
-            <Text style={styles.emptyTitle}>暂无可展示商品</Text>
-            <Text style={styles.emptyText}>这次搜索没有提取到结构化结果。</Text>
+            <Text style={styles.emptyTitle}>这次搜索没有找到商品</Text>
+            <Text style={styles.emptyText}>
+              试试更具体的描述，比如品牌、预算或用途。{'\n'}
+              例如："300 元以内的蓝牙耳机，适合跑步用"
+            </Text>
           </View>
         )}
 
@@ -351,6 +382,8 @@ export default function HomeScreen() {
               ]}
               activeOpacity={0.6}
               onPress={() => handleProductClick(product)}
+              accessibilityRole="button"
+              accessibilityLabel={`${product.title}，价格 ${formatPrice(product.price)} 元${product.brand ? `，品牌 ${product.brand}` : ''}${clickedIds.includes(product.id) ? '，已学习偏好' : ''}`}
             >
               <View style={styles.productThumb}>
                 <Text style={styles.productThumbText}>
@@ -379,17 +412,17 @@ export default function HomeScreen() {
                 ) : null}
                 <View style={styles.tagRow}>
                   {!product.is_demo && product.deal_tag ? (
-                    <View style={styles.dealTag}>
+                    <View style={styles.dealTag} accessibilityRole="text">
                       <Text style={styles.dealTagText}>{product.deal_tag}</Text>
                     </View>
                   ) : null}
                   {clickedIds.includes(product.id) && (
-                    <View style={styles.prefTag}>
+                    <View style={styles.prefTag} accessibilityRole="text">
                       <Text style={styles.prefTagText}>偏好命中 · 已学习</Text>
                     </View>
                   )}
                   {product.is_demo && (
-                    <View style={styles.demoTag}>
+                    <View style={styles.demoTag} accessibilityRole="text">
                       <Text style={styles.demoTagText}>演示数据</Text>
                     </View>
                   )}
@@ -413,7 +446,7 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingHorizontal: spacing.xxl,
-    paddingTop: spacing.xxxl + spacing.xxl,
+    paddingTop: spacing.pageTop,
     paddingBottom: spacing.l,
   },
   title: {
@@ -425,7 +458,7 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: fontSize.label,
     color: colors.meta,
-    marginTop: spacing.xs + 2,
+    marginTop: spacing.s,
   },
   searchBox: {
     paddingHorizontal: spacing.xl,
@@ -445,16 +478,17 @@ const styles = StyleSheet.create({
   button: {
     backgroundColor: colors.ink,
     borderRadius: radius.lg,
-    padding: spacing.l - 1,
+    padding: spacing.l,
     marginTop: spacing.m,
     alignItems: 'center',
+    minHeight: spacing.touchTarget,
   },
   buttonDisabled: {
     opacity: 0.4,
   },
   buttonText: {
     color: colors.accentOn,
-    fontSize: fontSize.body - 0.5,
+    fontSize: fontSize.item,
     fontWeight: '700',
     letterSpacing: 2,
   },
@@ -464,12 +498,15 @@ const styles = StyleSheet.create({
   },
   platformPill: {
     paddingHorizontal: spacing.l,
-    paddingVertical: spacing.s,
+    paddingVertical: spacing.m,
     borderRadius: radius.md,
     borderWidth: 1.5,
     borderColor: colors.border,
     backgroundColor: colors.surface,
     marginRight: spacing.s,
+    minHeight: spacing.touchTarget,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   platformPillActive: {
     backgroundColor: colors.ink,
@@ -497,19 +534,19 @@ const styles = StyleSheet.create({
   },
   termTitle: {
     color: colors.termDim,
-    fontSize: fontSize.micro - 1,
+    fontSize: fontSize.caption,
     fontFamily: fontFamily.mono,
     letterSpacing: 1.5,
   },
   termTaskId: {
     color: colors.termDim,
-    fontSize: fontSize.micro - 1,
+    fontSize: fontSize.caption,
     fontFamily: fontFamily.mono,
   },
   termLine: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: spacing.xs + 1,
+    paddingVertical: spacing.xs,
   },
   termIcon: {
     width: 18,
@@ -529,7 +566,7 @@ const styles = StyleSheet.create({
   termDivider: {
     height: 1,
     backgroundColor: colors.termBorder,
-    marginVertical: spacing.s + 2,
+    marginVertical: spacing.m,
   },
   termMsgRow: {
     flexDirection: 'row',
@@ -560,7 +597,7 @@ const styles = StyleSheet.create({
     height: 64,
     borderRadius: radius.md,
     backgroundColor: colors.skeleton,
-    marginRight: spacing.l - 2,
+    marginRight: spacing.l,
   },
   skeletonBody: {
     flex: 1,
@@ -568,20 +605,20 @@ const styles = StyleSheet.create({
   },
   skeletonLineWide: {
     height: 13,
-    borderRadius: radius.sm - 2,
+    borderRadius: radius.xs,
     backgroundColor: colors.skeleton,
     marginBottom: spacing.m,
     width: '88%',
   },
   skeletonLineShort: {
     height: 13,
-    borderRadius: radius.sm - 2,
+    borderRadius: radius.xs,
     backgroundColor: colors.skeleton,
     width: '42%',
   },
   emptyState: {
     marginHorizontal: spacing.xl,
-    padding: spacing.xl - 2,
+    padding: spacing.xl,
     borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.border,
@@ -591,7 +628,7 @@ const styles = StyleSheet.create({
     fontSize: fontSize.body,
     fontWeight: '700',
     color: colors.ink,
-    marginBottom: spacing.xs + 2,
+    marginBottom: spacing.s,
   },
   emptyText: {
     fontSize: fontSize.label,
@@ -615,12 +652,12 @@ const styles = StyleSheet.create({
   },
   resultsCount: {
     color: colors.meta,
-    fontSize: fontSize.micro + 0.5,
+    fontSize: fontSize.micro,
   },
   sortHint: {
     color: colors.meta,
     fontSize: fontSize.micro,
-    marginTop: spacing.xs + 2,
+    marginTop: spacing.s,
     marginBottom: spacing.xs,
   },
   demoBanner: {
@@ -632,13 +669,13 @@ const styles = StyleSheet.create({
     marginTop: spacing.m,
   },
   demoBannerText: {
-    fontSize: fontSize.micro + 1,
+    fontSize: fontSize.term,
     color: colors.warnFg,
     lineHeight: 18,
   },
   productRow: {
     flexDirection: 'row',
-    paddingVertical: spacing.l + 2,
+    paddingVertical: spacing.xl,
     borderBottomWidth: 1,
     borderBottomColor: colors.hairline,
   },
@@ -652,11 +689,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.skeleton,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: spacing.l - 2,
+    marginRight: spacing.l,
   },
   productThumbText: {
     color: colors.ink,
-    fontSize: fontSize.title + 2,
+    fontSize: fontSize.price,
     fontWeight: '800',
   },
   productBody: {
@@ -680,6 +717,7 @@ const styles = StyleSheet.create({
     fontSize: fontSize.price,
     fontWeight: '800',
     letterSpacing: -0.5,
+    fontVariant: fontVariant.tabular,
   },
   productPriceSymbol: {
     fontSize: fontSize.label,
@@ -694,7 +732,7 @@ const styles = StyleSheet.create({
   recReason: {
     color: colors.prefFg,
     fontSize: fontSize.micro,
-    marginTop: spacing.xs + 2,
+    marginTop: spacing.s,
   },
   tagRow: {
     flexDirection: 'row',
@@ -703,13 +741,13 @@ const styles = StyleSheet.create({
   },
   prefTag: {
     backgroundColor: colors.prefBg,
-    borderRadius: radius.sm - 2,
-    paddingHorizontal: spacing.s + 1,
-    paddingVertical: 3,
-    marginRight: spacing.xs + 2,
+    borderRadius: radius.xs,
+    paddingHorizontal: spacing.m,
+    paddingVertical: spacing.xs,
+    marginRight: spacing.s,
   },
   prefTagText: {
-    fontSize: fontSize.micro - 1,
+    fontSize: fontSize.caption,
     color: colors.prefFg,
     fontWeight: '700',
   },
@@ -717,24 +755,24 @@ const styles = StyleSheet.create({
     backgroundColor: colors.warnBg,
     borderWidth: 1,
     borderColor: colors.warnBorder,
-    borderRadius: radius.sm - 2,
-    paddingHorizontal: spacing.s + 1,
-    paddingVertical: 3,
+    borderRadius: radius.xs,
+    paddingHorizontal: spacing.m,
+    paddingVertical: spacing.xs,
   },
   demoTagText: {
-    fontSize: fontSize.micro - 1,
+    fontSize: fontSize.caption,
     color: colors.warnFg,
     fontWeight: '700',
   },
   dealTag: {
     backgroundColor: colors.ink,
-    borderRadius: radius.sm - 2,
-    paddingHorizontal: spacing.s + 1,
-    paddingVertical: 3,
-    marginRight: spacing.xs + 2,
+    borderRadius: radius.xs,
+    paddingHorizontal: spacing.m,
+    paddingVertical: spacing.xs,
+    marginRight: spacing.s,
   },
   dealTagText: {
-    fontSize: fontSize.micro - 1,
+    fontSize: fontSize.caption,
     color: colors.accentOn,
     fontWeight: '700',
   },
