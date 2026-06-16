@@ -37,5 +37,27 @@ ADB_PATH = os.getenv(
     r"C:\Users\AllureLove\AppData\Local\Microsoft\WinGet\Packages\Google.PlatformTools_Microsoft.Winget.Source_8wekyb3d8bbwe\platform-tools",
 )
 
+# 搜索结束后把手机焦点切回 App 的 deep link（best-effort）。
+# 单手机架构下 AutoGLM 接管手机搜索，结束时手机停在淘宝/京东页面，需主动切回；
+# 否则用户既看不到结果，开发模式下 Expo Go 还会因长时间后台而 "Cannot connect to Expo CLI"。
+# - 开发(Expo Go)：exp://<开发机IP>:8081
+# - 生产(APK)：App 自有 scheme
+# 未设置时不切回（单测/CI/无设备环境不受影响）。
+RETURN_DEEPLINK = os.getenv('SMARTCART_RETURN_DEEPLINK')
+# 约束该 deep link 由哪个包处理；Expo Go 为 host.exp.exponent。
+# 留空则交系统解析（exp:// 仅 Expo Go 处理，不会弹应用选择框）。
+RETURN_PACKAGE = os.getenv('SMARTCART_RETURN_PACKAGE')
+
+# 搜索结束、切回 App 前需要重建的 USB 反向隧道端口（逗号分隔）。
+# AutoGLM 接管手机搜索期间会高频调用 adb（输入/截屏/控件），把 adb reverse
+# 建立的端口映射重置掉；切回会让 Expo Go 经 deep-link 重载，此刻若隧道不在，
+# App 走 localhost 既连不到 Metro 也连不到后端 → 恢复最近结果失败、显示空首页。
+# 在切回前重建这两个端口即可闭环。默认重建 Metro(8081)+后端(8000)；留空则不重建。
+RETURN_REVERSE_PORTS = [
+    int(p.strip())
+    for p in os.getenv('SMARTCART_RETURN_REVERSE_PORTS', '8081,8000').split(',')
+    if p.strip()
+]
+
 logger.info("Config loaded (agent=%s, vision=%s, text=%s)",
             ZHIPU_MODEL, ZHIPU_VISION_MODEL, ZHIPU_TEXT_MODEL)

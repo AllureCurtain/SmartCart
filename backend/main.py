@@ -21,7 +21,11 @@ from services.agent_runtime import AgentRuntime
 from services.device_pool import device_pool
 from skills.taobao_search import TaobaoSearchSkill, JDSearchSkill
 from skills.catalog import build_registry
+from config import ADB_PATH, RETURN_DEEPLINK, RETURN_PACKAGE, RETURN_REVERSE_PORTS
 from datetime import datetime
+from pathlib import Path
+import os
+import subprocess
 import uuid
 import logging
 import uvicorn
@@ -55,8 +59,59 @@ agent = AgentRuntime(query_parser, memory_service, registry)
 
 # ==================== 搜索相关 ====================
 
+def _ensure_reverse_tunnels(adb_exe: str) -> None:
+    """重建 USB 反向隧道（best-effort，失败只记日志）。
+
+    AutoGLM 接管手机搜索时会高频调用 adb（输入/截屏/控件操作），把 adb reverse
+    建立的端口映射重置掉。切回前把 Metro/后端端口重新反向隧道一遍，确保 Expo Go
+    重载时经 localhost 能连上两个服务、恢复出刚搜到的结果。
+    """
+    if not RETURN_REVERSE_PORTS:
+        return
+    for port in RETURN_REVERSE_PORTS:
+        try:
+            subprocess.run(
+                [adb_exe, "reverse", f"tcp:{port}", f"tcp:{port}"],
+                capture_output=True, timeout=10,
+            )
+        except Exception:
+            logger.exception("重建反向隧道失败 tcp:%s（不影响切回）", port)
+    logger.info("USB 反向隧道已重建：%s", RETURN_REVERSE_PORTS)
+
+
+def _return_to_app() -> None:
+    """搜索结束后把手机焦点切回 SmartCart（best-effort，失败只记日志不影响结果）。
+
+    单手机架构下 AutoGLM 接管手机做搜索，结束时手机停在淘宝/京东页面。
+    这里用 adb 重新打开 App 的 deep link 把焦点切回：开发模式(Expo Go)下
+    重开 experience 会让 Expo Go 重连 Metro、重载，并从 task_store 恢复刚
+    完成的结果——顺带消除长时间后台导致的 "Cannot connect to Expo CLI"。
+    未配置 SMARTCART_RETURN_DEEPLINK 时直接跳过。
+    """
+    if not RETURN_DEEPLINK:
+        return
+    adb_name = "adb.exe" if os.name == "nt" else "adb"
+    adb_exe = str(Path(ADB_PATH) / adb_name)
+    # 切回前先重建隧道：搜索期被 AutoGLM 清掉的 adb reverse 必须在
+    # Expo Go 重载、发起恢复请求之前就位，否则走 localhost 连不上后端。
+    _ensure_reverse_tunnels(adb_exe)
+    cmd = [adb_exe, "shell", "am", "start",
+           "-a", "android.intent.action.VIEW", "-d", RETURN_DEEPLINK]
+    if RETURN_PACKAGE:
+        cmd.append(RETURN_PACKAGE)
+    try:
+        subprocess.run(cmd, capture_output=True, timeout=15)
+        logger.info("已切回 App：%s", RETURN_DEEPLINK)
+    except Exception:
+        logger.exception("切回 App 失败（不影响搜索结果）")
+
+
 def execute_search_task(task_id: str, request: SearchRequest):
-    """后台执行搜索任务：AgentRuntime 编排解析→记忆→搜索→重排，进度落盘。"""
+    """后台执行搜索任务：AgentRuntime 编排解析→记忆→搜索→重排，进度落盘。
+
+    完成（无论成败）后把手机焦点切回 App：单手机下 AutoGLM 会把手机留在
+    淘宝/京东页面，不主动切回则用户看不到结果、Expo Go 也会掉线。
+    """
     try:
         outcome = agent.run_search(
             request.query,
@@ -93,6 +148,8 @@ def execute_search_task(task_id: str, request: SearchRequest):
             error=str(e),
             created_at=datetime.now(),
         ))
+    finally:
+        _return_to_app()
 
 
 @app.post("/api/search", response_model=APIResponse)
