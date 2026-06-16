@@ -9,16 +9,8 @@ npm install
 
 ### 2. 配置后端地址
 
-编辑 `src/services/api.ts`，修改 `API_BASE_URL`：
-
-```typescript
-// 开发时使用你的电脑 IP 地址
-const API_BASE_URL = 'http://192.168.1.100:8000';
-```
-
-**如何获取你的 IP 地址：**
-- Windows: `ipconfig` 查看 IPv4 地址
-- macOS/Linux: `ifconfig` 或 `ip addr`
+App 会在 Expo Go 真机调试时自动读取开发机局域网 IP 并连接 `http://<IP>:8000`。
+Web / 模拟器会自动回退到 `http://localhost:8000`。
 
 ### 3. 启动后端服务
 
@@ -86,11 +78,7 @@ app/
    - 手机和电脑需要在同一 WiFi 网络
    - 后端服务需要使用 `0.0.0.0` 监听所有接口
 
-2. **API 地址**
-   - `localhost` 只能在电脑上访问
-   - 手机需要使用电脑的实际 IP 地址
-
-3. **调试**
+2. **调试**
    - 使用 `npm run web` 可以在浏览器中快速预览
    - 使用 Expo Go App 可以在真机上测试
 

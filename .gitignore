@@ -57,6 +57,7 @@ package-lock.json
 .expo-shared/
 npm-debug.*
 yarn-error.*
+.claude/worktrees/
 
 # APK 文件
 *.apk
@@ -66,6 +67,8 @@ yarn-error.*
 tmp/
 temp/
 *.tmp
+temp.md
+temp_verify_shot.png
 
 # 测试输出
 *.output
