@@ -38,22 +38,58 @@ ADB_PATH = os.getenv(
     r"C:\Users\AllureLove\AppData\Local\Microsoft\WinGet\Packages\Google.PlatformTools_Microsoft.Winget.Source_8wekyb3d8bbwe\platform-tools",
 )
 
-def _detect_lan_ip() -> str | None:
-    """探测本机局域网出口 IP（best-effort，不实际发包）。
+def _is_private_lan(ip: str) -> bool:
+    """是否为手机在普通局域网下可达的 RFC1918 私网地址。
 
-    用 UDP socket connect 一个公网地址，OS 只查路由表决定出口 IP、不发送数据包，
-    因此不依赖该地址可达、也无网络开销。用于自动拼切回 App 的 deep link，
-    省去手动配 IP。单测/CI/无网络时返回 None，切回逻辑自动跳过，不影响其他功能。
+    排除 fake-ip(198.18.0.0/15，代理软件网段)、Tailscale(100.64.0.0/10，CGNAT)、
+    link-local(169.254)、loopback(127)、公网——这些手机都连不到。
+    """
+    parts = ip.split(".")
+    if len(parts) != 4:
+        return False
+    try:
+        a, b = int(parts[0]), int(parts[1])
+    except ValueError:
+        return False
+    if a == 10:
+        return True
+    if a == 172 and 16 <= b <= 31:
+        return True
+    if a == 192 and b == 168:
+        return True
+    return False
+
+
+def _detect_lan_ip() -> str | None:
+    """探测手机可达的本机私网 IP（best-effort，不实际发包）。
+
+    优先用 UDP socket 出口 IP（OS 只查路由表、不发包）；若被代理 fake-ip(198.18)
+    等**非 RFC1918** 段劫持，退回 getaddrinfo 枚举本机网卡，挑第一个私网地址。
+    单测/CI/无网络时返回 None，切回逻辑自动跳过，不影响其他功能。
+
+    为何只接受 RFC1918：App 端 expo-constants 取的是 Metro 绑定的私网 IP，
+    手机与开发机同局域网，只有 10/172.16-31/192.168 手机才可达；Tailscale/代理
+    网段手机连不到，误用会让切回 deep link 打不开。
     """
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         sock.connect(("8.8.8.8", 80))
         ip = sock.getsockname()[0]
-        return ip if ip and not ip.startswith("127.") else None
+        if _is_private_lan(ip):
+            return ip
     except OSError:
-        return None
+        pass
     finally:
         sock.close()
+    # 出口 IP 被代理/VPN 劫持成非私网，枚举本机网卡找真正的 RFC1918 地址
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            ip = info[4][0]
+            if _is_private_lan(ip):
+                return ip
+    except OSError:
+        pass
+    return None
 
 
 def _resolve_return_deeplink() -> str | None:
