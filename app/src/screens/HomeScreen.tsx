@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Alert,
   Linking,
+  Keyboard,
 } from 'react-native';
 import ApiService, { Product } from '../services/api';
 import { colors, fontSize, fontFamily, fontVariant, spacing, radius } from '../theme/tokens';
@@ -122,6 +123,10 @@ export default function HomeScreen() {
       Alert.alert('提示', '请输入搜索内容');
       return;
     }
+
+    // 搜索发起即收起键盘：搜索期间 App 会被 AutoGLM 切到淘宝再切回，
+    // 输入框若仍持焦，切回后 IME 会停在打开状态，遮挡结果。
+    Keyboard.dismiss();
 
     setLoading(true);
     setProducts([]);
