@@ -86,7 +86,7 @@ def _return_to_app() -> None:
     这里用 adb 重新打开 App 的 deep link 把焦点切回：开发模式(Expo Go)下
     重开 experience 会让 Expo Go 重连 Metro、重载，并从 task_store 恢复刚
     完成的结果——顺带消除长时间后台导致的 "Cannot connect to Expo CLI"。
-    未配置 SMARTCART_RETURN_DEEPLINK 时直接跳过。
+    RETURN_DEEPLINK 为 None（零配置探测不到本机 IP，或 CI/单测无网络）时直接跳过。
     """
     if not RETURN_DEEPLINK:
         return

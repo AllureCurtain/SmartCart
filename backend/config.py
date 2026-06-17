@@ -3,6 +3,7 @@
 """
 import logging
 import os
+import socket
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -37,16 +38,47 @@ ADB_PATH = os.getenv(
     r"C:\Users\AllureLove\AppData\Local\Microsoft\WinGet\Packages\Google.PlatformTools_Microsoft.Winget.Source_8wekyb3d8bbwe\platform-tools",
 )
 
-# 搜索结束后把手机焦点切回 App 的 deep link（best-effort）。
+def _detect_lan_ip() -> str | None:
+    """探测本机局域网出口 IP（best-effort，不实际发包）。
+
+    用 UDP socket connect 一个公网地址，OS 只查路由表决定出口 IP、不发送数据包，
+    因此不依赖该地址可达、也无网络开销。用于自动拼切回 App 的 deep link，
+    省去手动配 IP。单测/CI/无网络时返回 None，切回逻辑自动跳过，不影响其他功能。
+    """
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.connect(("8.8.8.8", 80))
+        ip = sock.getsockname()[0]
+        return ip if ip and not ip.startswith("127.") else None
+    except OSError:
+        return None
+    finally:
+        sock.close()
+
+
+def _resolve_return_deeplink() -> str | None:
+    """切回 App 的 deep link：显式环境变量覆盖 > 自动探测本机 IP 拼开发模式链接 > None。
+
+    开发模式(Expo Go) deep link 形如 exp://<开发机IP>:8081。零配置下用本机出口
+    IP 自动拼接，与 App 端 expo-constants 读取的开发机 IP 一致；想覆盖（多网卡、
+    指定 IP、生产 APK 自有 scheme）设 SMARTCART_RETURN_DEEPLINK。探测不到 IP
+    （CI/单测/无网络）返回 None，切回跳过。
+    """
+    explicit = os.getenv('SMARTCART_RETURN_DEEPLINK')
+    if explicit:
+        return explicit
+    ip = _detect_lan_ip()
+    return f"exp://{ip}:8081" if ip else None
+
+
+# —— 搜索结束后把手机焦点切回 App（best-effort，失败只记日志不影响结果）——
 # 单手机架构下 AutoGLM 接管手机搜索，结束时手机停在淘宝/京东页面，需主动切回；
 # 否则用户既看不到结果，开发模式下 Expo Go 还会因长时间后台而 "Cannot connect to Expo CLI"。
-# - 开发(Expo Go)：exp://<开发机IP>:8081
-# - 生产(APK)：App 自有 scheme
-# 未设置时不切回（单测/CI/无设备环境不受影响）。
-RETURN_DEEPLINK = os.getenv('SMARTCART_RETURN_DEEPLINK')
-# 约束该 deep link 由哪个包处理；Expo Go 为 host.exp.exponent。
-# 留空则交系统解析（exp:// 仅 Expo Go 处理，不会弹应用选择框）。
-RETURN_PACKAGE = os.getenv('SMARTCART_RETURN_PACKAGE')
+# deep link 默认零配置自动探测本机 IP（开发模式 exp://），与 App 端读取的开发机 IP 一致；
+# 探测不到或 CI/单测环境自动跳过。SMARTCART_RETURN_DEEPLINK 可显式覆盖（如生产 APK 自有 scheme）。
+RETURN_DEEPLINK = _resolve_return_deeplink()
+# 约束该 deep link 由哪个包处理；默认 Expo Go（host.exp.exponent），留空交系统解析。
+RETURN_PACKAGE = os.getenv('SMARTCART_RETURN_PACKAGE', 'host.exp.exponent')
 
 # 搜索结束、切回 App 前需要重建的 USB 反向隧道端口（逗号分隔）。
 # AutoGLM 接管手机搜索期间会高频调用 adb（输入/截屏/控件），把 adb reverse
@@ -59,5 +91,5 @@ RETURN_REVERSE_PORTS = [
     if p.strip()
 ]
 
-logger.info("Config loaded (agent=%s, vision=%s, text=%s)",
-            ZHIPU_MODEL, ZHIPU_VISION_MODEL, ZHIPU_TEXT_MODEL)
+logger.info("Config loaded (agent=%s, vision=%s, text=%s, return_deeplink=%s)",
+            ZHIPU_MODEL, ZHIPU_VISION_MODEL, ZHIPU_TEXT_MODEL, RETURN_DEEPLINK or "(skip)")
