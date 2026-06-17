@@ -8,6 +8,7 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+  Linking,
 } from 'react-native';
 import ApiService, { Product } from '../services/api';
 import { colors, fontSize, fontFamily, fontVariant, spacing, radius } from '../theme/tokens';
@@ -87,23 +88,33 @@ export default function HomeScreen() {
     };
   }, []);
 
-  const handleProductClick = (product: Product) => {
-    // 演示数据的假品牌不写入 Memory
-    if (product.is_demo) {
-      return;
-    }
-    // 点击行为写入 Memory，用于偏好学习；上报失败不影响浏览
-    setClickedIds((prev) =>
-      prev.includes(product.id) ? prev : [...prev, product.id]
-    );
-    ApiService.recordAction({
-      user_id: 'default',
-      action_type: 'click',
-      product_id: product.id,
-      task_id: taskId,
-    }).catch(() => {
-      // 行为上报是非关键路径，失败时静默（不打断用户浏览）
+  // 跳转到对应平台 App 搜索该商品。截图提取只有标题/价格/品牌、无商品直链，
+  // 故按平台打开淘宝/京东的搜索页（App 已装则用 App，否则回落浏览器）。
+  const openProductOnPlatform = (product: Product) => {
+    const keyword = encodeURIComponent(product.title || '');
+    const url = product.platform === 'jd'
+      ? `https://so.m.jd.com/ware/search.action?keyword=${keyword}`
+      : `https://s.taobao.com/search?q=${keyword}`;
+    Linking.openURL(url).catch(() => {
+      Alert.alert('提示', '无法打开商品页面');
     });
+  };
+
+  const handleProductClick = (product: Product) => {
+    // 首次点击写入 Memory（偏好学习）；演示数据的假品牌不写入。
+    if (!product.is_demo && !clickedIds.includes(product.id)) {
+      setClickedIds((prev) => [...prev, product.id]);
+      ApiService.recordAction({
+        user_id: 'default',
+        action_type: 'click',
+        product_id: product.id,
+        task_id: taskId,
+      }).catch(() => {
+        // 行为上报是非关键路径，失败时静默（不打断用户浏览）
+      });
+    }
+    // 跳转到对应平台（淘宝/京东）搜索该商品——点击的主要意图
+    openProductOnPlatform(product);
   };
 
   const handleSearch = async () => {
