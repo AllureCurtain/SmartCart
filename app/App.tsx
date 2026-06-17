@@ -1,9 +1,14 @@
 import React, { useState } from 'react';
-import { StyleSheet, TouchableOpacity, Text, View } from 'react-native';
+import { StyleSheet, TouchableOpacity, Text, View, LogBox } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import HomeScreen from './src/screens/HomeScreen';
 import PreferenceScreen from './src/screens/PreferenceScreen';
 import { colors, fontSize, spacing } from './src/theme/tokens';
+
+// 单手机架构下 AutoGLM 接管手机搜索期间，Expo Go 被压后台，Metro 的 HMR/WebSocket
+// 心跳超时后 LogBox 会弹 "Cannot connect to Expo CLI"——属 SDK 56 已知开发期告警，
+// 不影响功能（搜索/切回/Memory 均正常），生产构建本就无 LogBox。演示录制时屏蔽此噪声。
+LogBox.ignoreAllLogs();
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('home');
