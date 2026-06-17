@@ -294,15 +294,29 @@ class PhoneSearchSkill:
             products_data, _ = json.JSONDecoder().raw_decode(content[start:])
 
             # 转换为 Product 对象
+            # GLM-4V 可能对同一商品返回近似重复条目（首屏列表 + 悬浮卡 / 滚动截屏重叠），
+            # 按归一化标题 + 价格去重，只保留首次识别到的条目。
+            import re as _re
+            def _norm_title(t: str) -> str:
+                return _re.sub(r"\s+", "", str(t or "")).lower()
+
             products = []
+            seen: set[str] = set()
+            skipped_dup = 0
             for i, p in enumerate(products_data[:max_count], 1):
                 price = _parse_float(p.get('price'))
                 if price <= 0:
                     continue  # 无有效价格的条目跳过（多为广告位/识别噪声）
+                title = p.get('title', f'商品 {i}')
+                dedup_key = (_norm_title(title), round(price, 2))
+                if dedup_key in seen:
+                    skipped_dup += 1
+                    continue
+                seen.add(dedup_key)
                 rating = _parse_float(p.get('rating'))
                 products.append(Product(
                     id=f"tb_{i}_{hash(p.get('title', ''))}",
-                    title=p.get('title', f'商品 {i}'),
+                    title=title,
                     price=price,
                     original_price=None,
                     rating=rating if 0 < rating <= 5 else None,
@@ -311,6 +325,9 @@ class PhoneSearchSkill:
                     brand=_clean_brand(p.get('brand')),
                     platform=self.platform
                 ))
+
+            if skipped_dup:
+                logger.info("去重 %d 个近似重复商品", skipped_dup)
 
             if not products:
                 raise ValueError("截图中未识别出有效商品")
