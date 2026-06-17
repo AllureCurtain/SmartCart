@@ -65,6 +65,22 @@ def _clean_brand(brand) -> str | None:
     return brand
 
 
+def _parse_products_json(content: str) -> list:
+    """解析 GLM-4V 返回的商品 JSON 数组，容错尾随逗号与首尾杂质。
+
+    模型输出常带 markdown 围栏、尾部说明文字，或末尾多余逗号（LLM 典型缺陷，
+    如 ``[...,]`` / ``{...,}``）。定位首个 ``[`` 后清洗尾随逗号再 raw_decode，
+    取第一个完整值；解析失败抛 ValueError 由上层降级 mock。
+    """
+    start = content.find('[')
+    if start == -1:
+        raise ValueError(f"模型未返回 JSON 数组: {content[:80]}")
+    # 去掉 ] 和 } 前的尾随逗号（含中间空白），否则严格 JSON 解析抛错
+    cleaned = re.sub(r",\s*([}\]])", r"\1", content[start:])
+    products_data, _ = json.JSONDecoder().raw_decode(cleaned)
+    return products_data
+
+
 def _parse_float(value) -> float:
     """容错解析数值：模型可能返回 '¥343.82'、'343.82元' 等带符号字符串"""
     if value is None:
@@ -283,22 +299,15 @@ class PhoneSearchSkill:
                 max_tokens=1024  # glm-4v-flash 上限 1024
             )
 
-            # 解析返回的 JSON
+            # 解析返回的 JSON（容错尾随逗号/markdown 围栏，详见 _parse_products_json）
             content = response.choices[0].message.content.strip()
-
-            # 模型输出可能带 markdown 围栏或尾随说明文字，
-            # 定位 JSON 数组起点后用 raw_decode 取第一个完整值，忽略尾部杂质
-            start = content.find('[')
-            if start == -1:
-                raise ValueError(f"模型未返回 JSON 数组: {content[:80]}")
-            products_data, _ = json.JSONDecoder().raw_decode(content[start:])
+            products_data = _parse_products_json(content)
 
             # 转换为 Product 对象
             # GLM-4V 可能对同一商品返回近似重复条目（首屏列表 + 悬浮卡 / 滚动截屏重叠），
             # 按归一化标题 + 价格去重，只保留首次识别到的条目。
-            import re as _re
             def _norm_title(t: str) -> str:
-                return _re.sub(r"\s+", "", str(t or "")).lower()
+                return re.sub(r"\s+", "", str(t or "")).lower()
 
             products = []
             seen: set[str] = set()

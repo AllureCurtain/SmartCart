@@ -8,6 +8,7 @@ from skills.taobao_search import (
     _parse_int,
     _clean_brand,
     _sanitize_keyword,
+    _parse_products_json,
     TaobaoSearchSkill,
 )
 
@@ -66,3 +67,27 @@ class TestMockDataMarking:
         products = TaobaoSearchSkill(demo_mode=True)._get_mock_products("蓝牙耳机", 5)
         assert len(products) == 5
         assert all(p.is_demo for p in products)
+
+
+class TestProductsJsonLenient:
+    def test_parses_trailing_comma_before_close(self):
+        # GLM-4V 实测会返回末尾多余逗号（旧逻辑抛 ValueError 回退 mock）
+        content = '[{"title":"耳机A","price":199,},{"title":"耳机B","price":99,}]'
+        data = _parse_products_json(content)
+        assert len(data) == 2
+        assert data[0]["title"] == "耳机A"
+
+    def test_strips_markdown_fence_and_tail_text(self):
+        content = '```json\n[{"title":"耳机","price":50}]\n```\n以上是商品列表。'
+        data = _parse_products_json(content)
+        assert len(data) == 1
+        assert data[0]["price"] == 50
+
+    def test_normal_array_passthrough(self):
+        content = '[{"title":"a","price":1},{"title":"b","price":2}]'
+        assert len(_parse_products_json(content)) == 2
+
+    def test_raises_when_no_array(self):
+        import pytest
+        with pytest.raises(ValueError):
+            _parse_products_json("no json here")
