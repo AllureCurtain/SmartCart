@@ -72,3 +72,16 @@ temp_verify_shot.png
 
 # 测试输出
 *.output
+
+# 调试产物（截图 / UI dump / 录屏 probe / 临时目录），不进版本库
+current_*.png
+current_ui*.xml
+sc_*.png
+smartcart_*.png
+smartcart_ui.xml
+verify_*.png
+verify_ui*.xml
+jd_deeplink_test.png
+*.h264
+recordings/
+tmp_*/
