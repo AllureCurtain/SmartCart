@@ -7,30 +7,26 @@
 npm install
 ```
 
-### 2. 配置后端地址
-
-App 会在 Expo Go 真机调试时自动读取开发机局域网 IP 并连接 `http://<IP>:8000`。
-Web / 模拟器会自动回退到 `http://localhost:8000`。
-
-### 3. 启动后端服务
+### 2. 启动后端服务
 
 在 `backend` 目录运行：
 ```bash
 uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
-### 4. 运行 App
+### 3. 运行 App（真机录屏推荐）
 
 ```bash
-# Web 版本（快速预览）
-npm run web
-
-# Android（需要连接手机或模拟器）
-npm run android
-
-# iOS（需要 macOS）
-npm run ios
+npx expo start --android --host localhost
 ```
+
+当前 demo 默认使用 `exp://localhost:8081` 切回 App，并依赖 `adb reverse` 把手机的 `localhost:8081` 和 `localhost:8000` 反向映射到开发机。
+
+结果页中已经内置：
+
+- Product layer：商品卡片、预算命中、推荐理由、最低价标签
+- Agent layer：可展开的 `Trace / Skills / Memory`
+- Memory feedback：点击商品后立即记录偏好，并用于下一次搜索
 
 ## 🎨 功能特性
 

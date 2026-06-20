@@ -41,37 +41,6 @@ export interface Product {
   deal_tag?: string | null;
 }
 
-export interface MemoryContext {
-  top_brand?: string | null;
-  top_brands?: { brand: string; score: number; count: number }[];
-  features?: string[];
-  price_range?: { min: number; max: number } | null;
-  recent_queries?: string[];
-  has_signal?: boolean;
-}
-
-export interface SearchResult {
-  task_id: string;
-  query?: string;
-  status: string;
-  progress?: string;
-  products?: Product[];
-  error?: string;
-  is_demo?: boolean;
-  agent_trace?: string[];
-  effective_query?: string;
-  elapsed_seconds?: number;
-  memory_context?: MemoryContext;
-}
-
-export interface UserPreference {
-  user_id: string;
-  brand_preferences: Record<string, any>;
-  price_preference?: any;
-  feature_preferences: Record<string, number>;
-  search_history: string[];
-}
-
 export interface ParsedQuery {
   category: string;
   keywords: string[];
@@ -80,13 +49,79 @@ export interface ParsedQuery {
   features: string[];
 }
 
+export interface SkillRun {
+  skill_name: string;
+  platform: string;
+  query: string;
+  status: string;
+  duration_seconds: number;
+  wait_seconds?: number;
+  control_seconds?: number;
+  extract_seconds?: number;
+  product_count: number;
+}
+
+export interface MatchedSignals {
+  brand: boolean;
+  feature: boolean;
+  price_range: boolean;
+  has_match: boolean;
+}
+
+export interface MemoryContext {
+  top_brand?: string | null;
+  top_brands?: { brand: string; score: number; count: number }[];
+  features?: string[];
+  price_range?: { min: number; max: number } | null;
+  recent_queries?: string[];
+  has_signal?: boolean;
+  matched_signals?: MatchedSignals;
+}
+
+export interface SearchResult {
+  task_id: string;
+  query?: string;
+  parsed_query?: ParsedQuery | null;
+  status: string;
+  progress?: string | null;
+  products?: Product[];
+  total_count?: number;
+  error?: string;
+  is_demo?: boolean;
+  agent_trace?: string[];
+  effective_query?: string | null;
+  elapsed_seconds?: number | null;
+  memory_context?: MemoryContext | null;
+  skill_runs?: SkillRun[];
+  created_at?: string;
+}
+
+export interface UserPreference {
+  user_id: string;
+  brand_preferences: Record<string, {
+    brand: string;
+    score: number;
+    count: number;
+    last_updated: string;
+  }>;
+  price_preference?: {
+    min: number;
+    max: number;
+    avg: number;
+    median: number;
+  } | null;
+  feature_preferences: Record<string, number>;
+  search_history: string[];
+  updated_at?: string;
+}
+
 class ApiService {
   /**
    * 创建搜索任务
    */
   async createSearch(
     query: string,
-    platform: string = 'taobao'
+    platform: string = 'all'
   ): Promise<{ task_id: string; status: string }> {
     const response = await axios.post(`${API_BASE_URL}/api/search`, {
       query,
@@ -131,11 +166,12 @@ class ApiService {
     action_type: string;
     product_id?: string;
     task_id?: string;
-  }): Promise<void> {
-    await axios.post(`${API_BASE_URL}/api/preference/action`, {
+  }): Promise<MemoryContext | null> {
+    const response = await axios.post(`${API_BASE_URL}/api/preference/action`, {
       ...action,
       timestamp: new Date().toISOString(),
     });
+    return response.data.data ?? null;
   }
 
   /**

@@ -1,41 +1,96 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  View,
+  Alert,
+  AppState,
+  Keyboard,
+  Linking,
+  ScrollView,
+  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  StyleSheet,
-  ScrollView,
-  ActivityIndicator,
-  Alert,
-  Linking,
-  Keyboard,
+  View,
 } from 'react-native';
-import ApiService, { Product } from '../services/api';
-import { colors, fontSize, fontFamily, fontVariant, spacing, radius } from '../theme/tokens';
 
-// 处理中阶段骨架（与后端 progress 字段对应）；完成后改用后端真实 agent_trace
+import AgentInsightPanel from '../components/AgentInsightPanel';
+import ProductResultCard from '../components/ProductResultCard';
+import { buildProductAppUrl } from '../services/platformLinks';
+import { splitDisplayProducts } from '../services/resultDisplay';
+import {
+  SEARCH_INPUT_PLACEHOLDER,
+  SearchResultInputSource,
+  isSearchResultFresh,
+  nextSearchInputValue,
+} from '../services/searchInputState';
+import ApiService, {
+  MemoryContext,
+  ParsedQuery,
+  Product,
+  SearchResult,
+  SkillRun,
+  UserPreference,
+} from '../services/api';
+import { colors, fontSize, fontFamily, radius, spacing } from '../theme/tokens';
+
 const STAGES = [
   { key: 'queued', label: '解析需求，创建搜索任务' },
-  { key: 'controlling_phone', label: '控制手机 · 打开购物 App 搜索' },
-  { key: 'extracting', label: '截屏 → GLM-4V 提取商品' },
-  { key: 'ranking', label: '按你的偏好重排序' },
+  { key: 'waiting_device', label: '等待设备空闲，准备执行综合搜索' },
+  { key: 'controlling_phone', label: '控制手机，进入购物 App 搜索' },
+  { key: 'extracting', label: '截屏并提取商品内容' },
+  { key: 'ranking', label: '综合排序并生成解释' },
 ] as const;
 
 const PLATFORM_LABELS = { all: '综合', taobao: '淘宝', jd: '京东' } as const;
 
+type Platform = keyof typeof PLATFORM_LABELS;
 type StatusTone = 'info' | 'success' | 'warning' | 'error';
 
-function formatPrice(price: number): string {
-  return Number.isFinite(price) ? price.toFixed(2) : String(price);
+function summarizePreference(preference: UserPreference | null): string {
+  if (!preference) {
+    return '暂无明显偏好';
+  }
+  const topBrand = Object.values(preference.brand_preferences)
+    .sort((a, b) => b.score - a.score)[0]?.brand;
+  const price = preference.price_preference
+    ? `${Math.round(preference.price_preference.min)}-${Math.round(preference.price_preference.max)}`
+    : '';
+  const parts = [topBrand, price ? `¥${price}` : ''].filter(Boolean);
+  return parts.length ? parts.join(' / ') : '暂无明显偏好';
 }
 
-function getProductInitial(product: Product): string {
-  const label = product.brand || product.platform || product.title || '商';
-  return label.trim().slice(0, 1).toUpperCase();
+function summarizeParsedQuery(parsedQuery: ParsedQuery | null): string {
+  if (!parsedQuery) {
+    return '';
+  }
+  const budget =
+    parsedQuery.price_min != null && parsedQuery.price_max != null
+      ? ` · ¥${Math.round(parsedQuery.price_min)}-${Math.round(parsedQuery.price_max)}`
+      : '';
+  return `${parsedQuery.category}${budget}`;
+}
+
+function isBudgetHit(product: Product, parsedQuery: ParsedQuery | null): boolean {
+  if (
+    !parsedQuery ||
+    parsedQuery.price_min == null ||
+    parsedQuery.price_max == null
+  ) {
+    return false;
+  }
+  return product.price >= parsedQuery.price_min && product.price <= parsedQuery.price_max;
+}
+
+function sourceLabel(products: Product[]): string {
+  const platforms = Array.from(new Set(products.map((product) => product.platform)));
+  if (platforms.length > 1) {
+    return `多源综合（${platforms.map((p) => PLATFORM_LABELS[p as Platform] || p).join('+')}）`;
+  }
+  const platform = platforms[0];
+  return `来自${PLATFORM_LABELS[platform as Platform] || platform || '搜索'}`;
 }
 
 export default function HomeScreen() {
+  const scrollViewRef = useRef<ScrollView>(null);
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
@@ -45,77 +100,194 @@ export default function HomeScreen() {
   const [taskId, setTaskId] = useState('');
   const [clickedIds, setClickedIds] = useState<string[]>([]);
   const [hasSubmittedSearch, setHasSubmittedSearch] = useState(false);
-  // 当前 Agent 阶段：STAGES 的 key，或 'done' / 'failed'
   const [stage, setStage] = useState('');
-  // 后端返回的真实 Agent 执行轨迹（完成后填充，作为 AGENT TRACE 主体）
   const [agentTrace, setAgentTrace] = useState<string[]>([]);
-  // 搜索平台（淘宝/京东）：证明 Skill 机制是多数据源可复用的，而非只绑淘宝
-  const [platform, setPlatform] = useState<'all' | 'taobao' | 'jd'>('all');
-  // 后端返回的端到端总耗时（秒），展示在 AGENT TRACE 头部（替代无意义的 task#id）
+  const [platform, setPlatform] = useState<Platform>('all');
   const [elapsedSeconds, setElapsedSeconds] = useState<number | null>(null);
+  const [parsedQuery, setParsedQuery] = useState<ParsedQuery | null>(null);
+  const [skillRuns, setSkillRuns] = useState<SkillRun[]>([]);
+  const [memoryContext, setMemoryContext] = useState<MemoryContext | null>(null);
+  const [preferenceHint, setPreferenceHint] = useState('暂无明显偏好');
+  const [actionMessage, setActionMessage] = useState('');
+  const [effectiveQuery, setEffectiveQuery] = useState('');
+  const [productsExpanded, setProductsExpanded] = useState(false);
+
+  const scrollToTop = (animated: boolean = true) => {
+    requestAnimationFrame(() => {
+      scrollViewRef.current?.scrollTo({ y: 0, animated });
+    });
+  };
+
+  const applySearchResult = (
+    result: SearchResult,
+    message?: string,
+    inputSource: SearchResultInputSource = 'submitted'
+  ) => {
+    setTaskId(result.task_id);
+    setProducts(result.products || []);
+    setProductsExpanded(false);
+    setIsDemo(!!result.is_demo);
+    setQuery((currentValue) =>
+      nextSearchInputValue(currentValue, result.query, inputSource)
+    );
+    setParsedQuery(result.parsed_query || null);
+    setStage(result.status === 'completed' ? 'done' : result.progress || '');
+    setAgentTrace(result.agent_trace || []);
+    setElapsedSeconds(result.elapsed_seconds ?? null);
+    setSkillRuns(result.skill_runs || []);
+    setMemoryContext(result.memory_context || null);
+    setEffectiveQuery(result.effective_query || '');
+    setStatusTone(result.is_demo ? 'warning' : 'success');
+    setSearchStatus(message || `搜索完成，找到 ${result.products?.length || 0} 个商品`);
+    setLoading(false);
+    setHasSubmittedSearch(true);
+    scrollToTop(inputSource === 'submitted');
+  };
+
+  const applyInFlightSnapshot = (result: SearchResult, message?: string) => {
+    setTaskId(result.task_id);
+    setQuery((currentValue) =>
+      nextSearchInputValue(currentValue, result.query, 'restore')
+    );
+    setParsedQuery(result.parsed_query || null);
+    setStage(result.progress || 'queued');
+    setAgentTrace(result.agent_trace || []);
+    setElapsedSeconds(result.elapsed_seconds ?? null);
+    setSkillRuns(result.skill_runs || []);
+    setMemoryContext(result.memory_context || null);
+    setEffectiveQuery(result.effective_query || '');
+    setStatusTone('info');
+    setSearchStatus(message || '已恢复当前搜索任务');
+    setLoading(true);
+  };
+
+  const loadPreferenceHint = async () => {
+    try {
+      const pref = await ApiService.getUserPreference('default');
+      setPreferenceHint(summarizePreference(pref));
+    } catch {
+      setPreferenceHint('暂无明显偏好');
+    }
+  };
+
+  const restoreLatestResult = async (
+    message?: string,
+    opts?: { fillQueryIfFresh?: boolean }
+  ) => {
+    const result = await ApiService.getLatestSearchResult('default');
+    if (!result || result.status !== 'completed') {
+      return;
+    }
+    // 刚搜完(续看窗口内)切回/重开：填回本次搜索词；冷启动超时：留空不预填
+    const fill = !!opts?.fillQueryIfFresh && isSearchResultFresh(result.created_at);
+    applySearchResult(result, message, fill ? 'submitted' : 'restore');
+  };
+
+  const restoreTaskState = async (messages?: { active?: string; fallback?: string }) => {
+    if (taskId) {
+      try {
+        const result = await ApiService.getSearchResult(taskId);
+        if (result.status === 'completed') {
+          applySearchResult(result, messages?.active || '已恢复当前搜索任务', 'restore');
+          return;
+        }
+        if (result.status === 'failed') {
+          setStage('failed');
+          setStatusTone('error');
+          setSearchStatus(
+            `${messages?.active || '已恢复当前搜索任务'}：${result.error || '未知错误'}`
+          );
+          setParsedQuery(result.parsed_query || null);
+          setSkillRuns(result.skill_runs || []);
+          setMemoryContext(result.memory_context || null);
+          setEffectiveQuery(result.effective_query || '');
+          setLoading(false);
+          return;
+        }
+        applyInFlightSnapshot(result, messages?.active || '已恢复当前搜索任务');
+        return;
+      } catch {
+        // 回退到最近已完成结果。
+      }
+    }
+    await restoreLatestResult(messages?.fallback || '已恢复最近搜索结果');
+  };
 
   useEffect(() => {
-    // 恢复最近结果是辅助能力，失败不影响新搜索；但 Expo Go 被 AutoGLM
-    // 切后台后经 deep-link 重载时，首次请求可能撞上隧道/重连的瞬态窗口而
-    // 失败——给它两次延迟重试，避免刚搜到的结果因重载显示成空首页。
     let cancelled = false;
-    const tryRestore = (attempt: number) => {
-      ApiService.getLatestSearchResult('default')
-        .then((result) => {
-          if (cancelled) return;
-          if (!result || result.status !== 'completed') {
-            return;
-          }
-          setTaskId(result.task_id);
-          setProducts(result.products || []);
-          setIsDemo(!!result.is_demo);
-          setQuery(result.query || '');
-          setStage('done');
-          setAgentTrace(result.agent_trace || []);
-          setElapsedSeconds(result.elapsed_seconds ?? null);
-          setStatusTone(result.is_demo ? 'warning' : 'success');
-          setSearchStatus(
-            `已恢复最近搜索结果，找到 ${result.products?.length || 0} 个商品`
-          );
-        })
-        .catch(() => {
-          if (cancelled || attempt >= 2) return;
-          setTimeout(() => tryRestore(attempt + 1), 1500);
-        });
+
+    const boot = async () => {
+      await loadPreferenceHint();
+      try {
+        if (!cancelled) {
+          await restoreLatestResult('已恢复最近搜索结果', { fillQueryIfFresh: true });
+        }
+      } catch {
+        // 首屏恢复失败不阻断新搜索。
+      }
     };
-    tryRestore(0);
+
+    boot();
+
     return () => {
       cancelled = true;
     };
   }, []);
 
-  // 跳转到对应平台 App 搜索该商品。截图提取只有标题/价格/品牌、无商品直链，
-  // 故按平台打开淘宝/京东的搜索页（App 已装则用 App，否则回落浏览器）。
-  const openProductOnPlatform = (product: Product) => {
-    const keyword = encodeURIComponent(product.title || '');
-    const url = product.platform === 'jd'
-      ? `https://so.m.jd.com/ware/search.action?keyword=${keyword}`
-      : `https://s.taobao.com/search?q=${keyword}`;
-    Linking.openURL(url).catch(() => {
-      Alert.alert('提示', '无法打开商品页面');
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') {
+        return;
+      }
+      if (loading || taskId) {
+        restoreTaskState({
+          active: '已从后台恢复当前任务',
+          fallback: '已从后台恢复最近结果',
+        }).catch(() => undefined);
+        return;
+      }
+      restoreLatestResult('已从后台恢复最近结果').catch(() => undefined);
     });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [loading, taskId]);
+
+  const openProductOnPlatform = async (product: Product) => {
+    const linkInput = {
+      platform: product.platform === 'jd' ? 'jd' : 'taobao',
+      title: product.title,
+    } as const;
+    const appUrl = buildProductAppUrl(linkInput);
+
+    try {
+      await Linking.openURL(appUrl);
+    } catch {
+      Alert.alert('提示', '无法打开购物 App，请确认已安装并允许跳转');
+    }
   };
 
-  const handleProductClick = (product: Product) => {
-    // 首次点击写入 Memory（偏好学习）；演示数据的假品牌不写入。
+  const handleProductClick = async (product: Product) => {
     if (!product.is_demo && !clickedIds.includes(product.id)) {
       setClickedIds((prev) => [...prev, product.id]);
-      ApiService.recordAction({
-        user_id: 'default',
-        action_type: 'click',
-        product_id: product.id,
-        task_id: taskId,
-      }).catch(() => {
-        // 行为上报是非关键路径，失败时静默（不打断用户浏览）
-      });
+      try {
+        const insight = await ApiService.recordAction({
+          user_id: 'default',
+          action_type: 'click',
+          product_id: product.id,
+          task_id: taskId,
+        });
+        if (insight) {
+          setMemoryContext(insight);
+        }
+        setActionMessage('已记录你的偏好');
+        await loadPreferenceHint();
+      } catch {
+        setActionMessage('偏好记录失败，请稍后重试');
+      }
     }
-    // 跳转到对应平台（淘宝/京东）搜索该商品——点击的主要意图
-    openProductOnPlatform(product);
+    await openProductOnPlatform(product);
   };
 
   const handleSearch = async () => {
@@ -124,30 +296,33 @@ export default function HomeScreen() {
       return;
     }
 
-    // 搜索发起即收起键盘：搜索期间 App 会被 AutoGLM 切到淘宝再切回，
-    // 输入框若仍持焦，切回后 IME 会停在打开状态，遮挡结果。
     Keyboard.dismiss();
+    scrollToTop();
 
     setLoading(true);
     setProducts([]);
+    setProductsExpanded(false);
     setIsDemo(false);
     setClickedIds([]);
     setHasSubmittedSearch(true);
     setStage('queued');
     setAgentTrace([]);
     setElapsedSeconds(null);
+    setParsedQuery(null);
+    setSkillRuns([]);
+    setMemoryContext(null);
+    setActionMessage('');
+    setEffectiveQuery('');
     setStatusTone('info');
     setSearchStatus('正在创建搜索任务...');
 
     try {
-      // 1. 创建搜索任务（解析/搜索/重排在后台执行）
       const { task_id } = await ApiService.createSearch(query, platform);
       setTaskId(task_id);
       setSearchStatus('任务已创建，等待执行');
 
-      // 2. 轮询获取结果
       let attempts = 0;
-      const maxAttempts = 150; // 最多等待 5 分钟（每 2 秒一次）
+      const maxAttempts = 150;
 
       const pollResult = async () => {
         if (attempts >= maxAttempts) {
@@ -158,14 +333,13 @@ export default function HomeScreen() {
           return;
         }
 
-        attempts++;
+        attempts += 1;
         const elapsed = Math.floor(attempts * 2);
 
-        let result;
+        let result: SearchResult | null = null;
         try {
           result = await ApiService.getSearchResult(task_id);
         } catch {
-          // 单次轮询失败（网络抖动等）不中断，继续重试
           setTimeout(pollResult, 2000);
           return;
         }
@@ -176,25 +350,27 @@ export default function HomeScreen() {
         }
 
         if (result.status === 'completed') {
-          setProducts(result.products || []);
-          setIsDemo(!!result.is_demo);
-          setStage('done');
-          setAgentTrace(result.agent_trace || []);
-          setElapsedSeconds(result.elapsed_seconds ?? null);
-          setStatusTone(result.is_demo ? 'warning' : 'success');
-          setSearchStatus(`搜索完成，找到 ${result.products?.length || 0} 个商品`);
-          setLoading(false);
+          applySearchResult(result, undefined, 'submitted');
+          await loadPreferenceHint();
         } else if (result.status === 'failed') {
+          setTaskId(result.task_id);
+          setParsedQuery(result.parsed_query || null);
+          setSkillRuns(result.skill_runs || []);
+          setMemoryContext(result.memory_context || null);
+          setEffectiveQuery(result.effective_query || '');
           setStage('failed');
           setStatusTone('error');
-          setSearchStatus(`搜索失败：${result.error}`);
+          setSearchStatus(`搜索失败：${result.error || '未知错误'}`);
           setLoading(false);
         } else {
-          // 同步后端汇报的真实阶段
+          setTaskId(result.task_id);
+          setParsedQuery(result.parsed_query || null);
+          setSkillRuns(result.skill_runs || []);
+          setMemoryContext(result.memory_context || null);
+          setEffectiveQuery(result.effective_query || '');
           const current = result.progress || 'queued';
           setStage(current);
-          const label =
-            STAGES.find((s) => s.key === current)?.label ?? '正在搜索';
+          const label = STAGES.find((s) => s.key === current)?.label ?? '正在搜索';
           setSearchStatus(`${label} (${elapsed}s)`);
           setTimeout(pollResult, 2000);
         }
@@ -209,37 +385,37 @@ export default function HomeScreen() {
     }
   };
 
-  // 终端日志行的三种状态
   const stageIndex = STAGES.findIndex((s) => s.key === stage);
-  const stageMark = (index: number): { icon: string; style: object } => {
+  const stageState = (index: number) => {
     if (stage === 'done' || index < stageIndex) {
-      return { icon: '✓', style: styles.termIconDone };
+      return { label: '完成', style: styles.stageDone };
     }
     if (index === stageIndex && loading) {
-      return { icon: '●', style: styles.termIconActive };
+      return { label: '当前', style: styles.stageActive };
     }
     if (stage === 'failed' && index === stageIndex) {
-      return { icon: '✕', style: styles.termIconFailed };
+      return { label: '失败', style: styles.stageFailed };
     }
-    return { icon: '○', style: styles.termIconPending };
+    return { label: '待执行', style: styles.stagePending };
   };
 
   const statusMessageStyle = {
-    info: styles.termMsgInfo,
-    success: styles.termMsgSuccess,
-    warning: styles.termMsgWarning,
-    error: styles.termMsgError,
+    info: styles.progressMessageInfo,
+    success: styles.progressMessageSuccess,
+    warning: styles.progressMessageWarning,
+    error: styles.progressMessageError,
   }[statusTone];
-
-  // 结果来源标签：多平台 → 多源综合；单平台 → 来自某平台
-  const resultPlatforms = Array.from(new Set(products.map((p) => p.platform)));
-  const sourceLabel =
-    resultPlatforms.length > 1
-      ? `多源综合（${resultPlatforms.map((p) => (p === 'jd' ? '京东' : '淘宝')).join('+')}）`
-      : `来自${resultPlatforms[0] === 'jd' ? '京东' : '淘宝'}`;
+  const displayedProducts = splitDisplayProducts(products, productsExpanded);
+  const canToggleProducts = products.length > displayedProducts.limit;
+  const primaryProductCount = Math.min(products.length, displayedProducts.limit);
+  const resultsTitle =
+    canToggleProducts && !productsExpanded
+      ? `优先推荐 ${primaryProductCount} 件`
+      : `为你找到 ${products.length} 件`;
 
   return (
     <ScrollView
+      ref={scrollViewRef}
       style={styles.container}
       contentContainerStyle={styles.contentContainer}
       keyboardShouldPersistTaps="handled"
@@ -253,7 +429,7 @@ export default function HomeScreen() {
       <View style={styles.searchBox}>
         <TextInput
           style={styles.input}
-          placeholder="告诉我你想买什么..."
+          placeholder={SEARCH_INPUT_PLACEHOLDER}
           placeholderTextColor={colors.meta}
           value={query}
           onChangeText={setQuery}
@@ -283,66 +459,47 @@ export default function HomeScreen() {
             </TouchableOpacity>
           ))}
         </View>
+        <Text style={styles.preferenceHint}>最近偏好：{preferenceHint}</Text>
         <TouchableOpacity
           style={[styles.button, loading && styles.buttonDisabled]}
           onPress={handleSearch}
           disabled={loading}
+          activeOpacity={0.85}
           accessibilityRole="button"
           accessibilityLabel={loading ? '搜索中，请稍候' : '开始搜索'}
           accessibilityState={{ disabled: loading }}
         >
-          <Text style={styles.buttonText}>
-            {loading ? '搜索中' : '开始搜索'}
-          </Text>
+          <Text style={styles.buttonText}>{loading ? '搜索中' : '开始搜索'}</Text>
         </TouchableOpacity>
       </View>
 
-      {searchStatus ? (
-        <View
-          style={styles.terminal}
-          accessibilityLabel={`Agent 执行轨迹，当前状态：${searchStatus}`}
-        >
-          <View style={styles.termHeader}>
-            <Text style={styles.termTitle}>AGENT TRACE</Text>
-            {elapsedSeconds != null ? (
-              <Text style={styles.termTaskId}>⏱ {elapsedSeconds.toFixed(1)}s</Text>
-            ) : null}
-          </View>
-          {agentTrace.length > 0
-            ? // 完成后：展示后端真实 Agent 执行轨迹
-              agentTrace.map((line, index) => (
-                <View key={index} style={styles.termLine}>
-                  <Text style={[styles.termIcon, styles.termIconDone]}>✓</Text>
-                  <Text style={styles.termStep}>{line}</Text>
-                </View>
-              ))
-            : // 处理中：按 progress 展示阶段骨架
-              STAGES.map((s, index) => {
-                const mark = stageMark(index);
+      {searchStatus && (loading || stage === 'failed' || products.length === 0) ? (
+        <View style={styles.progressCard} accessibilityLabel={`当前搜索状态：${searchStatus}`}>
+          <Text style={styles.progressTitle}>{loading ? '搜索进行中' : '搜索状态'}</Text>
+          <Text style={[styles.progressMessage, statusMessageStyle]}>{searchStatus}</Text>
+          {loading ? (
+            <View style={styles.progressStages}>
+              {STAGES.map((s, index) => {
+                const mark = stageState(index);
                 return (
-                  <View key={s.key} style={styles.termLine}>
-                    <Text style={[styles.termIcon, mark.style]}>{mark.icon}</Text>
-                    <Text style={styles.termStep}>{s.label}</Text>
+                  <View key={s.key} style={styles.stageLine}>
+                    <Text style={[styles.stageBadge, mark.style]}>{mark.label}</Text>
+                    <Text style={styles.stageText}>{s.label}</Text>
                   </View>
                 );
               })}
-          <View style={styles.termDivider} />
-          <View style={styles.termMsgRow}>
-            <Text style={[styles.termMsg, statusMessageStyle]}>
-              {searchStatus}
-            </Text>
-            {loading && (
-              <ActivityIndicator
-                size="small"
-                color={colors.termAmber}
-                accessibilityLabel="处理中"
-              />
-            )}
-          </View>
+            </View>
+          ) : null}
         </View>
       ) : null}
 
-      {loading && products.length === 0 && (
+      {actionMessage ? (
+        <View style={styles.actionBanner}>
+          <Text style={styles.actionBannerText}>{actionMessage}</Text>
+        </View>
+      ) : null}
+
+      {loading && products.length === 0 ? (
         <View style={styles.skeletonList}>
           {[0, 1, 2].map((item) => (
             <View key={item} style={styles.skeletonRow}>
@@ -354,100 +511,85 @@ export default function HomeScreen() {
             </View>
           ))}
         </View>
-      )}
+      ) : null}
 
-      {hasSubmittedSearch &&
-        !loading &&
-        products.length === 0 &&
-        statusTone === 'success' && (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyTitle}>这次搜索没有找到商品</Text>
-            <Text style={styles.emptyText}>
-              试试更具体的描述，比如品牌、预算或用途。{'\n'}
-              例如："300 元以内的蓝牙耳机，适合跑步用"
-            </Text>
-          </View>
-        )}
+      {hasSubmittedSearch && !loading && products.length === 0 && statusTone === 'success' ? (
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyTitle}>这次搜索没有找到商品</Text>
+          <Text style={styles.emptyText}>
+            试试更具体的描述，比如品牌、预算或用途。
+          </Text>
+        </View>
+      ) : null}
 
-      {products.length > 0 && (
+      {products.length > 0 ? (
         <View style={styles.resultsContainer}>
           <View style={styles.resultsHeader}>
-            <Text style={styles.resultsTitle}>为你找到 {products.length} 件</Text>
+            <View style={styles.resultsTitleBlock}>
+              <Text style={styles.resultsTitle}>{resultsTitle}</Text>
+              {parsedQuery ? (
+                <Text style={styles.intentSummary}>{summarizeParsedQuery(parsedQuery)}</Text>
+              ) : null}
+            </View>
             <Text style={styles.resultsCount}>
-              {isDemo ? '演示数据' : `${sourceLabel} · 真实数据`}
+              {isDemo ? '演示数据' : `${sourceLabel(products)} · 真实数据`}
             </Text>
           </View>
-          {!isDemo && (
+
+          {!isDemo ? (
             <Text style={styles.sortHint}>
-              已按你的偏好排序 · 点击商品会继续学习你的口味
+              按需求与偏好排序，点击会学习偏好
             </Text>
-          )}
-          {isDemo && (
+          ) : null}
+
+          {isDemo ? (
             <View style={styles.demoBanner}>
               <Text style={styles.demoBannerText}>
-                当前为演示数据，非真实商品（真机搜索失败或处于演示模式）
+                当前为演示数据，非真实商品。
               </Text>
             </View>
-          )}
-          {products.map((product, index) => (
-            <TouchableOpacity
+          ) : null}
+
+          {displayedProducts.visibleProducts.map((product) => (
+            <ProductResultCard
               key={product.id}
-              style={[
-                styles.productRow,
-                index === products.length - 1 && styles.productRowLast,
-              ]}
-              activeOpacity={0.6}
+              product={product}
+              clicked={clickedIds.includes(product.id)}
+              budgetHit={isBudgetHit(product, parsedQuery)}
               onPress={() => handleProductClick(product)}
-              accessibilityRole="button"
-              accessibilityLabel={`${product.title}，价格 ${formatPrice(product.price)} 元${product.brand ? `，品牌 ${product.brand}` : ''}${clickedIds.includes(product.id) ? '，已学习偏好' : ''}`}
-            >
-              <View style={styles.productThumb}>
-                <Text style={styles.productThumbText}>
-                  {getProductInitial(product)}
-                </Text>
-              </View>
-              <View style={styles.productBody}>
-                <Text style={styles.productTitle} numberOfLines={2}>
-                  {product.title}
-                </Text>
-                <View style={styles.productPriceRow}>
-                  <Text style={styles.productPrice}>
-                    <Text style={styles.productPriceSymbol}>¥</Text>
-                    {formatPrice(product.price)}
-                  </Text>
-                  <Text style={styles.productMeta} numberOfLines={1}>
-                    {[product.brand, product.platform]
-                      .filter(Boolean)
-                      .join(' · ')}
-                  </Text>
-                </View>
-                {!product.is_demo && product.recommendation_reason ? (
-                  <Text style={styles.recReason} numberOfLines={1}>
-                    {product.recommendation_reason}
-                  </Text>
-                ) : null}
-                <View style={styles.tagRow}>
-                  {!product.is_demo && product.deal_tag ? (
-                    <View style={styles.dealTag} accessibilityRole="text">
-                      <Text style={styles.dealTagText}>{product.deal_tag}</Text>
-                    </View>
-                  ) : null}
-                  {clickedIds.includes(product.id) && (
-                    <View style={styles.prefTag} accessibilityRole="text">
-                      <Text style={styles.prefTagText}>偏好命中 · 已学习</Text>
-                    </View>
-                  )}
-                  {product.is_demo && (
-                    <View style={styles.demoTag} accessibilityRole="text">
-                      <Text style={styles.demoTagText}>演示数据</Text>
-                    </View>
-                  )}
-                </View>
-              </View>
-            </TouchableOpacity>
+            />
           ))}
+
+          {canToggleProducts ? (
+            <TouchableOpacity
+              style={styles.moreResultsButton}
+              activeOpacity={0.85}
+              onPress={() => setProductsExpanded((prev) => !prev)}
+              accessibilityRole="button"
+              accessibilityLabel={
+                productsExpanded
+                  ? `收起到前 ${displayedProducts.limit} 件商品`
+                  : `展开其余 ${displayedProducts.hiddenCount} 件商品`
+              }
+            >
+              <Text style={styles.moreResultsButtonText}>
+                {productsExpanded
+                  ? `收起到前 ${displayedProducts.limit} 件`
+                  : `展开其余 ${displayedProducts.hiddenCount} 件`}
+              </Text>
+            </TouchableOpacity>
+          ) : null}
+
+          <AgentInsightPanel
+            parsedQuery={parsedQuery}
+            effectiveQuery={effectiveQuery}
+            elapsedSeconds={elapsedSeconds}
+            agentTrace={agentTrace}
+            skillRuns={skillRuns}
+            memoryContext={memoryContext}
+          />
         </View>
-      )}
+      ) : null}
     </ScrollView>
   );
 }
@@ -469,7 +611,6 @@ const styles = StyleSheet.create({
     fontSize: fontSize.display,
     fontWeight: '800',
     color: colors.ink,
-    letterSpacing: -0.5,
   },
   subtitle: {
     fontSize: fontSize.label,
@@ -490,23 +631,6 @@ const styles = StyleSheet.create({
     minHeight: 80,
     color: colors.ink,
     textAlignVertical: 'top',
-  },
-  button: {
-    backgroundColor: colors.ink,
-    borderRadius: radius.lg,
-    padding: spacing.l,
-    marginTop: spacing.m,
-    alignItems: 'center',
-    minHeight: spacing.touchTarget,
-  },
-  buttonDisabled: {
-    opacity: 0.4,
-  },
-  buttonText: {
-    color: colors.accentOn,
-    fontSize: fontSize.item,
-    fontWeight: '700',
-    letterSpacing: 2,
   },
   platformRow: {
     flexDirection: 'row',
@@ -531,74 +655,91 @@ const styles = StyleSheet.create({
   platformPillText: {
     fontSize: fontSize.label,
     color: colors.sub,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   platformPillTextActive: {
     color: colors.accentOn,
   },
-  terminal: {
+  preferenceHint: {
+    marginTop: spacing.m,
+    color: colors.meta,
+    fontSize: fontSize.micro,
+  },
+  button: {
+    backgroundColor: colors.ink,
+    borderRadius: radius.lg,
+    padding: spacing.l,
+    marginTop: spacing.m,
+    alignItems: 'center',
+    minHeight: spacing.touchTarget,
+  },
+  buttonDisabled: {
+    opacity: 0.4,
+  },
+  buttonText: {
+    color: colors.accentOn,
+    fontSize: fontSize.item,
+    fontWeight: '800',
+  },
+  progressCard: {
     marginHorizontal: spacing.xl,
     marginBottom: spacing.l,
-    backgroundColor: colors.termBg,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
     borderRadius: radius.md,
     padding: spacing.l,
   },
-  termHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: spacing.m,
+  progressTitle: {
+    color: colors.ink,
+    fontSize: fontSize.label,
+    fontWeight: '800',
   },
-  termTitle: {
-    color: colors.termDim,
-    fontSize: fontSize.caption,
-    fontFamily: fontFamily.mono,
-    letterSpacing: 1.5,
+  progressMessage: {
+    marginTop: spacing.s,
+    fontSize: fontSize.micro,
+    lineHeight: 18,
   },
-  termTaskId: {
-    color: colors.termDim,
-    fontSize: fontSize.caption,
-    fontFamily: fontFamily.mono,
+  progressMessageInfo: { color: colors.meta },
+  progressMessageSuccess: { color: colors.prefFg },
+  progressMessageWarning: { color: colors.warnFg },
+  progressMessageError: { color: colors.dangerFg },
+  progressStages: {
+    marginTop: spacing.m,
   },
-  termLine: {
+  stageLine: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: spacing.xs,
   },
-  termIcon: {
-    width: 18,
-    fontSize: fontSize.term,
+  stageBadge: {
+    width: 48,
+    fontSize: fontSize.caption,
     fontFamily: fontFamily.mono,
+    fontWeight: '700',
   },
-  termIconDone: { color: colors.termGreen },
-  termIconActive: { color: colors.termAmber },
-  termIconFailed: { color: colors.termRed },
-  termIconPending: { color: colors.termDim },
-  termStep: {
-    color: colors.termText,
-    fontSize: fontSize.term,
-    fontFamily: fontFamily.mono,
-    flex: 1,
-  },
-  termDivider: {
-    height: 1,
-    backgroundColor: colors.termBorder,
-    marginVertical: spacing.m,
-  },
-  termMsgRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  termMsg: {
-    fontSize: fontSize.term,
-    fontFamily: fontFamily.mono,
+  stageDone: { color: colors.prefFg },
+  stageActive: { color: colors.warnFg },
+  stageFailed: { color: colors.dangerFg },
+  stagePending: { color: colors.meta },
+  stageText: {
+    color: colors.sub,
+    fontSize: fontSize.micro,
     flex: 1,
     lineHeight: 18,
   },
-  termMsgInfo: { color: colors.termDim },
-  termMsgSuccess: { color: colors.termGreen },
-  termMsgWarning: { color: colors.termAmber },
-  termMsgError: { color: colors.termRed },
+  actionBanner: {
+    marginHorizontal: spacing.xl,
+    marginBottom: spacing.l,
+    backgroundColor: colors.prefBg,
+    borderRadius: radius.sm,
+    padding: spacing.m,
+  },
+  actionBannerText: {
+    color: colors.prefFg,
+    fontSize: fontSize.label,
+    fontWeight: '800',
+  },
   skeletonList: {
     paddingHorizontal: spacing.xl,
   },
@@ -642,7 +783,7 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     fontSize: fontSize.body,
-    fontWeight: '700',
+    fontWeight: '800',
     color: colors.ink,
     marginBottom: spacing.s,
   },
@@ -656,25 +797,38 @@ const styles = StyleSheet.create({
   },
   resultsHeader: {
     flexDirection: 'row',
-    alignItems: 'baseline',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     paddingTop: spacing.s,
+  },
+  resultsTitleBlock: {
+    flex: 1,
+    paddingRight: spacing.m,
   },
   resultsTitle: {
     fontSize: fontSize.title,
     fontWeight: '800',
     color: colors.ink,
-    letterSpacing: -0.3,
   },
   resultsCount: {
     color: colors.meta,
     fontSize: fontSize.micro,
+    textAlign: 'right',
+    maxWidth: 132,
+    lineHeight: 17,
+  },
+  intentSummary: {
+    color: colors.ink,
+    fontSize: fontSize.label,
+    fontWeight: '700',
+    marginTop: spacing.s,
   },
   sortHint: {
     color: colors.meta,
     fontSize: fontSize.micro,
     marginTop: spacing.s,
-    marginBottom: spacing.xs,
+    marginBottom: spacing.m,
+    lineHeight: 18,
   },
   demoBanner: {
     backgroundColor: colors.warnBg,
@@ -683,113 +837,29 @@ const styles = StyleSheet.create({
     borderColor: colors.warnBorder,
     padding: spacing.m,
     marginTop: spacing.m,
+    marginBottom: spacing.m,
   },
   demoBannerText: {
     fontSize: fontSize.term,
     color: colors.warnFg,
     lineHeight: 18,
   },
-  productRow: {
-    flexDirection: 'row',
-    paddingVertical: spacing.xl,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.hairline,
-  },
-  productRowLast: {
-    borderBottomWidth: 0,
-  },
-  productThumb: {
-    width: 64,
-    height: 64,
-    borderRadius: radius.md,
-    backgroundColor: colors.skeleton,
+  moreResultsButton: {
+    minHeight: spacing.touchTarget,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: spacing.l,
+    marginTop: spacing.s,
+    marginBottom: spacing.l,
+    paddingHorizontal: spacing.l,
+    paddingVertical: spacing.m,
   },
-  productThumbText: {
+  moreResultsButtonText: {
     color: colors.ink,
-    fontSize: fontSize.price,
-    fontWeight: '800',
-  },
-  productBody: {
-    flex: 1,
-    minWidth: 0,
-  },
-  productTitle: {
-    color: colors.ink,
-    fontSize: fontSize.item,
-    lineHeight: 22,
-    fontWeight: '600',
-    marginBottom: spacing.s,
-  },
-  productPriceRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    justifyContent: 'space-between',
-  },
-  productPrice: {
-    color: colors.ink,
-    fontSize: fontSize.price,
-    fontWeight: '800',
-    letterSpacing: -0.5,
-    fontVariant: fontVariant.tabular,
-  },
-  productPriceSymbol: {
     fontSize: fontSize.label,
-    fontWeight: '700',
-  },
-  productMeta: {
-    color: colors.meta,
-    fontSize: fontSize.micro,
-    marginLeft: spacing.s,
-    flexShrink: 1,
-  },
-  recReason: {
-    color: colors.prefFg,
-    fontSize: fontSize.micro,
-    marginTop: spacing.s,
-  },
-  tagRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginTop: spacing.s,
-  },
-  prefTag: {
-    backgroundColor: colors.prefBg,
-    borderRadius: radius.xs,
-    paddingHorizontal: spacing.m,
-    paddingVertical: spacing.xs,
-    marginRight: spacing.s,
-  },
-  prefTagText: {
-    fontSize: fontSize.caption,
-    color: colors.prefFg,
-    fontWeight: '700',
-  },
-  demoTag: {
-    backgroundColor: colors.warnBg,
-    borderWidth: 1,
-    borderColor: colors.warnBorder,
-    borderRadius: radius.xs,
-    paddingHorizontal: spacing.m,
-    paddingVertical: spacing.xs,
-  },
-  demoTagText: {
-    fontSize: fontSize.caption,
-    color: colors.warnFg,
-    fontWeight: '700',
-  },
-  dealTag: {
-    backgroundColor: colors.ink,
-    borderRadius: radius.xs,
-    paddingHorizontal: spacing.m,
-    paddingVertical: spacing.xs,
-    marginRight: spacing.s,
-  },
-  dealTagText: {
-    fontSize: fontSize.caption,
-    color: colors.accentOn,
-    fontWeight: '700',
+    fontWeight: '800',
   },
 });
