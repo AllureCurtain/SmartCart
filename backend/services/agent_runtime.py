@@ -15,13 +15,21 @@ import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from threading import Lock
+from typing import Any, Callable, Dict, List, Optional
 
-from models import ParsedQuery, Product
+from models import ParsedQuery, Product, SkillRun
 
 logger = logging.getLogger(__name__)
 
 _SEARCH_SUFFIX = "_search"
+_PROGRESS_ORDER = {
+    "queued": 0,
+    "waiting_device": 1,
+    "controlling_phone": 2,
+    "extracting": 3,
+    "ranking": 4,
+}
 
 
 @dataclass
@@ -33,6 +41,18 @@ class AgentSearchOutcome:
     memory_context: Dict[str, Any] = field(default_factory=dict)
     is_demo: bool = False
     elapsed_seconds: float = 0.0  # 端到端总耗时，前端展示在 AGENT TRACE 头部
+    skill_runs: List[SkillRun] = field(default_factory=list)
+
+
+@dataclass
+class SourceRun:
+    platform: str
+    product_dicts: List[Dict[str, Any]]
+    duration_seconds: float
+    wait_seconds: float
+    control_seconds: float
+    extract_seconds: float
+    status: str
 
 
 def _budget_text(parsed: ParsedQuery) -> str:
@@ -68,6 +88,24 @@ def _annotate_deals(products: List[Product]) -> None:
                 best.deal_tag = f"{brand}全网最低"
 
 
+def _matched_signals(context: Dict[str, Any], products: List[Product]) -> Dict[str, bool]:
+    top_brands = {item["brand"] for item in context.get("top_brands", [])}
+    features = context.get("features", [])
+    price_range = context.get("price_range")
+
+    brand_hit = any(p.brand in top_brands for p in products if p.brand)
+    feature_hit = any(any(feature in p.title for feature in features) for p in products)
+    price_hit = bool(price_range) and any(
+        price_range["min"] <= p.price <= price_range["max"] for p in products
+    )
+    return {
+        "brand": brand_hit,
+        "feature": feature_hit,
+        "price_range": price_hit,
+        "has_match": brand_hit or feature_hit or price_hit,
+    }
+
+
 class AgentRuntime:
     def __init__(self, query_parser, memory_service, registry):
         self.parser = query_parser
@@ -91,23 +129,73 @@ class AgentRuntime:
         return available[:1] or ["taobao"]  # 请求的平台未注册时退化为已有的
 
     def _search_sources(
-        self, targets: List[str], keyword: str, max_products: int
-    ) -> List[Tuple[str, List[Dict[str, Any]], float]]:
-        """并发调用各平台搜索技能；返回 [(platform, product_dicts, 耗时)]。
-        单个源失败不拖垮整体（记日志、该源返回空）。子搜索不写任务进度，
-        避免多线程并发写同一任务文件——设备排队由 device_pool 指标体现。
-        """
-        def one(p: str) -> Tuple[str, List[Dict[str, Any]], float]:
+        self,
+        targets: List[str],
+        keyword: str,
+        max_products: int,
+        on_progress: Optional[Callable[[str], None]] = None,
+    ) -> List[SourceRun]:
+        """并发调用各平台搜索技能，保留结构化执行摘要。"""
+        progress_lock = Lock()
+        highest_stage = {"value": -1}
+
+        def emit_progress(stage: str) -> None:
+            if on_progress is None:
+                return
+            order = _PROGRESS_ORDER.get(stage, -1)
+            with progress_lock:
+                if order >= highest_stage["value"]:
+                    highest_stage["value"] = order
+                    on_progress(stage)
+
+        def one(p: str) -> SourceRun:
             start = time.perf_counter()
+            stage_times: Dict[str, float] = {}
+
+            def source_progress(stage: str) -> None:
+                stage_times.setdefault(stage, time.perf_counter())
+                emit_progress(stage)
+
             try:
                 dicts = self.registry.invoke(
-                    f"{p}{_SEARCH_SUFFIX}", keyword=keyword,
-                    max_products=max_products, on_progress=None,
+                    f"{p}{_SEARCH_SUFFIX}",
+                    keyword=keyword,
+                    max_products=max_products,
+                    on_progress=source_progress,
                 )
+                status = "completed"
             except Exception:
                 logger.exception("source %s search failed", p)
                 dicts = []
-            return p, dicts, time.perf_counter() - start
+                status = "failed"
+            end = time.perf_counter()
+            wait_start = stage_times.get("waiting_device", start)
+            control_start = stage_times.get("controlling_phone")
+            extract_start = stage_times.get("extracting")
+            wait_seconds = (
+                max(control_start - wait_start, 0.0)
+                if control_start is not None
+                else 0.0
+            )
+            control_seconds = (
+                max((extract_start or end) - control_start, 0.0)
+                if control_start is not None
+                else 0.0
+            )
+            extract_seconds = (
+                max(end - extract_start, 0.0)
+                if extract_start is not None
+                else 0.0
+            )
+            return SourceRun(
+                platform=p,
+                product_dicts=dicts,
+                duration_seconds=end - start,
+                wait_seconds=wait_seconds,
+                control_seconds=control_seconds,
+                extract_seconds=extract_seconds,
+                status=status,
+            )
 
         if len(targets) == 1:
             return [one(targets[0])]
@@ -156,11 +244,33 @@ class AgentRuntime:
 
         # 4. (并发) 多源搜索；设备绑定的源在 device_pool 上串行
         targets = self._resolve_targets(platform)
-        notify("controlling_phone")
-        results = self._search_sources(targets, effective_query, max_products)
-        for p, dicts, dt in sorted(results, key=lambda r: r[0]):
-            trace.append(f"调用工具 → {p}{_SEARCH_SUFFIX}（{len(dicts)} 个商品）· {_fmt_duration(dt)}")
-        product_dicts = [pd for _p, pds, _dt in results for pd in pds]
+        notify("waiting_device")
+        results = self._search_sources(
+            targets,
+            effective_query,
+            max_products,
+            on_progress=notify,
+        )
+        for run in sorted(results, key=lambda item: item.platform):
+            trace.append(
+                f"调用工具 → {run.platform}{_SEARCH_SUFFIX}（{len(run.product_dicts)} 个商品）· "
+                f"{_fmt_duration(run.duration_seconds)}"
+            )
+        skill_runs = [
+            SkillRun(
+                skill_name=f"{run.platform}{_SEARCH_SUFFIX}",
+                platform=run.platform,
+                query=effective_query,
+                status=run.status,
+                duration_seconds=round(run.duration_seconds, 2),
+                wait_seconds=round(run.wait_seconds, 2),
+                control_seconds=round(run.control_seconds, 2),
+                extract_seconds=round(run.extract_seconds, 2),
+                product_count=len(run.product_dicts),
+            )
+            for run in sorted(results, key=lambda item: item.platform)
+        ]
+        product_dicts = [pd for run in results for pd in run.product_dicts]
 
         # 5. 重排 + 比价 + 推荐理由
         notify("ranking")
@@ -185,6 +295,10 @@ class AgentRuntime:
             trace.append(f"综合比价 → {len(products)} 个（{dist}）{cheap_txt}")
 
         matched = self.memory.matched_count(products)
+        enriched_context = {
+            **context,
+            "matched_signals": _matched_signals(context, products),
+        }
         is_demo = any(p.is_demo for p in products)
         trace.append(
             f"推荐排序 → {len(products)} 个商品，{matched} 个命中偏好 · {_fmt_duration(rerank_dt)}"
@@ -201,7 +315,8 @@ class AgentRuntime:
             parsed_query=parsed,
             agent_trace=trace,
             effective_query=effective_query,
-            memory_context=context,
+            memory_context=enriched_context,
             is_demo=is_demo,
             elapsed_seconds=round(time.perf_counter() - started, 2),
+            skill_runs=skill_runs,
         )

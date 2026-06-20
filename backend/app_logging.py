@@ -8,8 +8,22 @@ import logging
 import sys
 
 
+def _prefer_utf8(stream) -> None:
+    """Use UTF-8 console streams on Windows when the runtime allows it."""
+    reconfigure = getattr(stream, "reconfigure", None)
+    if reconfigure is None:
+        return
+    try:
+        reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        return
+
+
 def setup_logging(level: int = logging.INFO) -> None:
     """初始化根日志器；重复调用安全（已配置则跳过）"""
+    _prefer_utf8(sys.stdout)
+    _prefer_utf8(sys.stderr)
+
     root = logging.getLogger()
     if root.handlers:
         return

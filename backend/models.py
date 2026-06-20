@@ -43,6 +43,20 @@ class ParsedQuery(BaseModel):
     features: List[str] = []  # 特性要求（如"降噪"、"音质"）
 
 
+class SkillRun(BaseModel):
+    """单次技能执行摘要，供 Result 页 Skills Tab 直接消费。"""
+
+    skill_name: str
+    platform: str
+    query: str
+    status: str  # completed | failed
+    duration_seconds: float
+    wait_seconds: float = 0.0  # 等待设备资源/排队耗时
+    control_seconds: float = 0.0  # 真机控制 App 搜索耗时
+    extract_seconds: float = 0.0  # 截图与视觉提取耗时
+    product_count: int
+
+
 class SearchResult(BaseModel):
     """搜索结果"""
     task_id: str  # 任务 ID
@@ -51,13 +65,14 @@ class SearchResult(BaseModel):
     products: List[Product]  # 商品列表
     total_count: int  # 总数
     status: str = "completed"  # completed | failed | processing
-    progress: Optional[str] = None  # queued | controlling_phone | extracting | ranking
+    progress: Optional[str] = None  # queued | waiting_device | controlling_phone | extracting | ranking
     error: Optional[str] = None  # 错误信息
     is_demo: bool = False  # 结果中包含演示数据
     agent_trace: List[str] = Field(default_factory=list)  # Agent 可见执行轨迹
     memory_context: Dict[str, Any] = Field(default_factory=dict)  # 本次使用的记忆上下文
-    effective_query: Optional[str] = None  # 实际输入淘宝的搜索词
+    effective_query: Optional[str] = None  # 实际输入真机搜索词
     elapsed_seconds: Optional[float] = None  # Agent 端到端总耗时（秒），前端展示在轨迹头部
+    skill_runs: List[SkillRun] = Field(default_factory=list)  # 结构化技能执行摘要
     created_at: datetime  # 创建时间
 
 

@@ -93,25 +93,25 @@ def _detect_lan_ip() -> str | None:
 
 
 def _resolve_return_deeplink() -> str | None:
-    """切回 App 的 deep link：显式环境变量覆盖 > 自动探测本机 IP 拼开发模式链接 > None。
+    """切回 App 的 deep link：显式环境变量覆盖 > localhost 隧道默认值。
 
-    开发模式(Expo Go) deep link 形如 exp://<开发机IP>:8081。零配置下用本机出口
-    IP 自动拼接，与 App 端 expo-constants 读取的开发机 IP 一致；想覆盖（多网卡、
-    指定 IP、生产 APK 自有 scheme）设 SMARTCART_RETURN_DEEPLINK。探测不到 IP
-    （CI/单测/无网络）返回 None，切回跳过。
+    当前真机演示必须用 Metro ``--host localhost``，手机通过 adb reverse 访问
+    电脑的 8081/8000。若切回时使用 ``exp://<局域网IP>:8081``，Expo Go 会绕过
+    reverse 直连 Metro，在复杂网卡/IPv6 双栈环境下进入 ErrorActivity。
+    生产 APK 自有 scheme 或 LAN 模式需要其它 deep link 时，设
+    SMARTCART_RETURN_DEEPLINK 显式覆盖。
     """
     explicit = os.getenv('SMARTCART_RETURN_DEEPLINK')
     if explicit:
         return explicit
-    ip = _detect_lan_ip()
-    return f"exp://{ip}:8081" if ip else None
+    return "exp://localhost:8081"
 
 
 # —— 搜索结束后把手机焦点切回 App（best-effort，失败只记日志不影响结果）——
 # 单手机架构下 AutoGLM 接管手机搜索，结束时手机停在淘宝/京东页面，需主动切回；
 # 否则用户既看不到结果，开发模式下 Expo Go 还会因长时间后台而 "Cannot connect to Expo CLI"。
-# deep link 默认零配置自动探测本机 IP（开发模式 exp://），与 App 端读取的开发机 IP 一致；
-# 探测不到或 CI/单测环境自动跳过。SMARTCART_RETURN_DEEPLINK 可显式覆盖（如生产 APK 自有 scheme）。
+# deep link 默认走 localhost + adb reverse，匹配 Metro --host localhost。
+# SMARTCART_RETURN_DEEPLINK 可显式覆盖（如生产 APK 自有 scheme 或 LAN 模式）。
 RETURN_DEEPLINK = _resolve_return_deeplink()
 # 约束该 deep link 由哪个包处理；默认 Expo Go（host.exp.exponent），留空交系统解析。
 RETURN_PACKAGE = os.getenv('SMARTCART_RETURN_PACKAGE', 'host.exp.exponent')

@@ -57,12 +57,15 @@ def test_trace_has_all_stages(tmp_path):
     assert "推荐排序" in joined
 
 
-def test_memory_injects_brand_into_effective_query(tmp_path):
+def test_brand_not_injected_but_reranked(tmp_path):
     parsed = ParsedQuery(category="蓝牙耳机", keywords=["蓝牙耳机"])
     rt, fake = _runtime(tmp_path, parsed, seed_brand="华为")
     out = rt.run_search("蓝牙耳机")
-    assert "华为" in out.effective_query
-    assert fake.last_keyword == out.effective_query  # 真机收到的是注入后的词
+    # 品牌不注入搜索词：真机收到的是纯品类词
+    assert "华为" not in out.effective_query
+    assert fake.last_keyword == out.effective_query
+    # 但 rerank 仍把偏好品牌排到首位
+    assert out.products[0].brand == "华为"
 
 
 def test_user_broad_intent_overrides_memory(tmp_path):
@@ -80,10 +83,26 @@ def test_rerank_promotes_preferred_brand(tmp_path):
     assert out.products[0].recommendation_reason
 
 
-def test_progress_callback_receives_stages(tmp_path):
+def test_runtime_exposes_structured_skill_runs(tmp_path):
+    parsed = ParsedQuery(category="蓝牙耳机", keywords=["蓝牙耳机"])
+    rt, _ = _runtime(tmp_path, parsed, seed_brand="华为")
+    out = rt.run_search("蓝牙耳机")
+
+    assert out.skill_runs[0].skill_name == "taobao_search"
+    assert out.skill_runs[0].platform == "taobao"
+    assert out.skill_runs[0].query == out.effective_query
+    assert out.skill_runs[0].status == "completed"
+    assert out.skill_runs[0].wait_seconds >= 0
+    assert out.skill_runs[0].control_seconds >= 0
+    assert out.skill_runs[0].extract_seconds >= 0
+    assert out.memory_context["matched_signals"]["brand"] is True
+
+
+def test_progress_callback_receives_child_skill_stages(tmp_path):
     parsed = ParsedQuery(category="蓝牙耳机", keywords=["蓝牙耳机"])
     rt, _ = _runtime(tmp_path, parsed)
     stages = []
     rt.run_search("蓝牙耳机", on_progress=stages.append)
     assert "controlling_phone" in stages
-    assert "ranking" in stages
+    assert "extracting" in stages
+    assert stages[-1] == "ranking"

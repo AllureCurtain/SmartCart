@@ -133,6 +133,7 @@ def execute_search_task(task_id: str, request: SearchRequest):
             memory_context=outcome.memory_context,
             effective_query=outcome.effective_query,
             elapsed_seconds=outcome.elapsed_seconds,
+            skill_runs=outcome.skill_runs,
             created_at=datetime.now(),
         ))
     except Exception as e:

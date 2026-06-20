@@ -17,9 +17,6 @@ _BRAND_INJECT_SCORE = 0.3
 _BRAND_INJECT_COUNT = 2
 _FEATURE_INJECT_WEIGHT = 0.3
 
-# 用户表达"想广泛比较"时，不注入品牌，尊重探索意图
-_BROAD_SIGNALS = ("不限品牌", "随便看看", "都看看", "对比", "比较")
-
 
 class MemoryContextService:
     def __init__(self, preference_service: PreferenceService):
@@ -76,17 +73,13 @@ class MemoryContextService:
     ) -> Tuple[str, List[str]]:
         """
         返回 (effective_query, injected_terms)。
-        规则：类目永远保留在最前；至多注入一个品牌 + 一个特性；
-        用户表达广泛比较时不注入品牌。
+
+        品牌偏好**不注入搜索词**：注入会让真机只搜该品牌、把其它品牌从结果里
+        过滤掉，损失多样性。品牌个性化改由 rerank 排序加权体现——偏好品牌命中
+        后排序靠前，但不从结果中排除其它品牌。raw_query 暂保留签名以备扩展。
         """
         terms: List[str] = [parsed.category]
         injected: List[str] = []
-        broad = any(sig in raw_query for sig in _BROAD_SIGNALS)
-
-        brand = context.get("top_brand")
-        if brand and not broad and brand not in parsed.category:
-            terms.append(brand)
-            injected.append(brand)
 
         for feature in context.get("features", []):
             if feature not in parsed.category and feature not in (parsed.features or []):
@@ -114,8 +107,16 @@ class MemoryContextService:
             # 当前意图：价格落在本次预算
             if parsed.price_min is not None and parsed.price_max is not None:
                 if parsed.price_min <= p.price <= parsed.price_max:
-                    score += 0.4
-                    reasons.append((0.4, f"价格在你本次预算 {int(parsed.price_min)}-{int(parsed.price_max)} 元内"))
+                    score += 1.2
+                    reasons.append((1.2, f"价格在你本次预算 {int(parsed.price_min)}-{int(parsed.price_max)} 元内"))
+                else:
+                    center = (parsed.price_min + parsed.price_max) / 2
+                    if center > 0:
+                        if p.price < parsed.price_min:
+                            distance = parsed.price_min - p.price
+                        else:
+                            distance = p.price - parsed.price_max
+                        score -= min(distance / center, 0.8)
 
             # 记忆：品牌偏好命中
             if p.brand and p.brand in brand_scores:

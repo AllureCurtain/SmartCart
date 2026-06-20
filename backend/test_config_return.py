@@ -1,8 +1,8 @@
-"""切回 App 配置的自动探测单元测试。
+"""切回 App 配置单元测试。
 
 测 _is_private_lan（私网判定）、_detect_lan_ip（出口 IP 探测 + 网卡兜底）与
-_resolve_return_deeplink（deep link 解析），验证零配置自动探测（含代理 fake-ip
-环境退回网卡枚举）+ 环境变量覆盖 + 无网络跳过，不依赖真实网络/adb。
+_resolve_return_deeplink（deep link 解析），验证 localhost 隧道默认值 + 环境变量
+覆盖 + 私网探测工具函数，不依赖真实网络/adb。
 """
 from unittest.mock import MagicMock, patch
 
@@ -85,13 +85,13 @@ def test_resolve_deeplink_explicit_env_overrides_detection(monkeypatch):
         detect.assert_not_called()  # 显式覆盖时不触发探测
 
 
-def test_resolve_deeplink_auto_detects_ip_when_unset(monkeypatch):
+def test_resolve_deeplink_defaults_to_localhost_when_unset(monkeypatch):
     monkeypatch.delenv("SMARTCART_RETURN_DEEPLINK", raising=False)
     monkeypatch.setattr(config, "_detect_lan_ip", lambda: "192.168.43.107")
-    assert config._resolve_return_deeplink() == "exp://192.168.43.107:8081"
+    assert config._resolve_return_deeplink() == "exp://localhost:8081"
 
 
-def test_resolve_deeplink_none_when_no_ip_and_unset(monkeypatch):
+def test_resolve_deeplink_still_uses_localhost_when_no_ip_and_unset(monkeypatch):
     monkeypatch.delenv("SMARTCART_RETURN_DEEPLINK", raising=False)
     monkeypatch.setattr(config, "_detect_lan_ip", lambda: None)
-    assert config._resolve_return_deeplink() is None
+    assert config._resolve_return_deeplink() == "exp://localhost:8081"

@@ -95,6 +95,16 @@ def test_one_source_failure_is_isolated(tmp_path):
     assert [p.platform for p in out.products] == ["taobao"]  # 京东失败被隔离，不拖垮淘宝
 
 
+def test_failed_source_still_has_failed_skill_run(tmp_path):
+    tb = _FakeSource("taobao", [{"id": "t1", "title": "A", "price": 300}])
+    out = _runtime(tmp_path, tb, _FailingSource()).run_search("耳机", platform="all")
+
+    by_platform = {run.platform: run for run in out.skill_runs}
+    assert by_platform["taobao"].status == "completed"
+    assert by_platform["jd"].status == "failed"
+    assert by_platform["jd"].product_count == 0
+
+
 def test_fan_out_runs_concurrently(tmp_path):
     # 两个各 sleep 0.3s 的非设备源：并发应 ~0.3s 而非串行 ~0.6s
     tb = _FakeSource("taobao", [{"id": "t1", "title": "A", "price": 300}], delay=0.3)

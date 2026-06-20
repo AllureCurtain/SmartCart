@@ -50,18 +50,13 @@ class TestContext:
 
 
 class TestEffectiveQuery:
-    def test_injects_confident_brand(self, tmp_path):
+    def test_brand_not_injected_to_query(self, tmp_path):
+        # 品牌不注入搜索词（避免把其它品牌从结果里过滤掉）；个性化交给 rerank 加权
         svc = _svc(tmp_path)
         ctx = {"top_brand": "华为", "features": []}
         eq, injected = svc.build_effective_query(_parsed(), ctx)
-        assert eq == "蓝牙耳机 华为"
-        assert injected == ["华为"]
-
-    def test_user_broad_intent_blocks_injection(self, tmp_path):
-        svc = _svc(tmp_path)
-        ctx = {"top_brand": "华为", "features": []}
-        eq, injected = svc.build_effective_query(_parsed(), ctx, raw_query="蓝牙耳机 不限品牌")
         assert eq == "蓝牙耳机"
+        assert "华为" not in eq
         assert injected == []
 
     def test_category_always_preserved_first(self, tmp_path):
@@ -92,6 +87,21 @@ class TestRerank:
         products = [_product("cheap", "便宜款", 100), _product("fit", "预算款", 500)]
         ranked = svc.rerank(products, _parsed(pmin=400, pmax=600), ctx)
         assert ranked[0].id == "fit"
+        assert "预算" in ranked[0].recommendation_reason
+
+    def test_current_budget_beats_strong_brand_memory(self, tmp_path):
+        svc = _svc(tmp_path)
+        ctx = {
+            "top_brands": [{"brand": "一加", "score": 1.0}],
+            "features": [],
+            "price_range": None,
+        }
+        products = [
+            _product("memory", "一加 Buds 低价款", 249, brand="一加"),
+            _product("budget", "索尼 降噪蓝牙耳机", 799, brand="索尼"),
+        ]
+        ranked = svc.rerank(products, _parsed(pmin=640, pmax=960), ctx)
+        assert ranked[0].id == "budget"
         assert "预算" in ranked[0].recommendation_reason
 
     def test_no_memory_marks_exploration(self, tmp_path):

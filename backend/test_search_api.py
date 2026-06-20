@@ -64,6 +64,9 @@ def test_search_flow_returns_trace_and_ranked_products(tmp_path):
         assert data["products"][0]["price"] == 500
         assert data["products"][0]["recommendation_reason"]
         assert data["effective_query"]
+        assert data["skill_runs"][0]["skill_name"] == "taobao_search"
+        assert data["skill_runs"][0]["query"] == data["effective_query"]
+        assert "matched_signals" in data["memory_context"]
     finally:
         main.task_store, main.registry, main.agent = originals
 
